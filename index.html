@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Quiz Battle Royale</title>
+  <!-- SheetJS: .xlsx 파싱 라이브러리 (CDN) -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== 세팅 뷰 ===== -->
+  <div id="view-setting" class="view active">
+    <div class="setting-wrap">
+      <div class="logo-area">
+        <h1 class="logo-text">Quiz Battle Royale</h1>
+        <p class="logo-sub">개인전 실시간 퀴즈 게임</p>
+      </div>
+
+      <div class="setting-cards">
+
+        <!-- 방 만들기 (관리자) -->
+        <div class="card card-create">
+          <h2>🏫 방 만들기 <small>(선생님)</small></h2>
+
+          <div class="form-row">
+            <label>방 코드 <span class="hint">(영문+숫자 4자리)</span></label>
+            <input id="room-code-input" class="input-big" type="text" maxlength="4"
+              placeholder="예: AB3K" autocomplete="off" style="text-transform:uppercase">
+          </div>
+
+          <div class="form-row">
+            <label>플레이어 수</label>
+            <select id="player-count-select" class="select-big">
+              <option value="4" selected>4명</option>
+              <option value="5">5명</option>
+              <option value="6">6명</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <label>문제 파일 <span class="hint">(.xlsx)</span></label>
+            <label class="file-upload-label" for="xlsx-file-input">
+              📂 파일 선택
+              <input id="xlsx-file-input" type="file" accept=".xlsx" style="display:none">
+            </label>
+            <p id="xlsx-status" class="xlsx-status">파일을 선택해주세요</p>
+          </div>
+
+          <button id="btn-create-room" class="btn btn-primary">게임 준비 시작 ▶</button>
+        </div>
+
+        <!-- 방 참여 -->
+        <div class="card card-join">
+          <h2>🚪 방 참여</h2>
+
+          <div class="form-row">
+            <label>방 코드</label>
+            <input id="join-code-input" class="input-big" type="text" maxlength="4"
+              placeholder="예: AB3K" autocomplete="off" style="text-transform:uppercase">
+          </div>
+
+          <div class="join-buttons">
+            <button id="btn-join-student" class="btn btn-green">학생으로 참여</button>
+            <button id="btn-join-board"   class="btn btn-blue">상황판 열기</button>
+            <button id="btn-join-admin"   class="btn btn-orange">관리자 입장</button>
+          </div>
+        </div>
+      </div>
+
+      <p id="setting-message" class="setting-message hidden"></p>
+    </div>
+  </div>
+
+  <!-- ===== 상황판 뷰 ===== -->
+  <div id="view-board" class="view">
+
+    <!-- 상단 50%: 문제 영역 -->
+    <div id="board-top" class="board-top">
+      <div id="board-phase-label" class="board-phase-label">대기 중</div>
+      <div id="board-q-info" class="board-q-info"></div>
+      <div id="board-q-text" class="board-q-text"></div>
+      <div id="board-q-choices" class="board-q-choices"></div>
+      <img id="board-q-img" class="board-q-img hidden" src="" alt="">
+      <div id="board-countdown" class="board-countdown hidden"></div>
+    </div>
+
+    <!-- 하단 50%: 플레이어 패널 -->
+    <div id="board-bottom" class="board-bottom">
+      <div id="board-players" class="board-players"></div>
+    </div>
+
+    <button id="board-mute-btn" class="mute-btn">🔊</button>
+    <div id="board-room-code" class="room-code-display"></div>
+  </div>
+
+  <!-- ===== 클라이언트 뷰 ===== -->
+  <div id="view-client" class="view">
+
+    <!-- 단계 1: 플레이어 선택 -->
+    <div id="cs-player-select" class="client-section active">
+      <div class="cs-header">
+        <h2>내 번호를 선택하세요</h2>
+        <p id="cs-room-label" class="room-code-small"></p>
+      </div>
+      <div id="cs-player-buttons" class="cs-player-buttons"></div>
+    </div>
+
+    <!-- 단계 2: 대기 -->
+    <div id="cs-waiting" class="client-section">
+      <div class="wait-wrap">
+        <div class="wait-icon">⏳</div>
+        <p id="cs-wait-msg" class="wait-msg">게임 시작 대기 중...</p>
+        <p class="wait-sub">선생님이 시작하면 자동으로 넘어갑니다</p>
+      </div>
+    </div>
+
+    <!-- 단계 3: 카운트다운 -->
+    <div id="cs-countdown" class="client-section">
+      <div class="countdown-wrap">
+        <p class="countdown-label">문제 시작!</p>
+        <div id="cs-countdown-num" class="countdown-num">5</div>
+      </div>
+    </div>
+
+    <!-- 단계 4: 퀴즈 입력 -->
+    <div id="cs-quiz" class="client-section">
+      <div class="quiz-top-bar">
+        <span id="cq-player-badge" class="player-badge"></span>
+        <span id="cq-timer" class="cq-timer">0.0초</span>
+      </div>
+
+      <div id="cq-q-type-badge" class="q-type-badge"></div>
+      <div id="cq-q-text" class="cq-q-text"></div>
+      <img id="cq-q-img" class="cq-q-img hidden" src="" alt="">
+
+      <div id="cq-answer-area" class="cq-answer-area">
+
+        <!-- 객관식: 번호 타이핑 -->
+        <div id="cq-mc" class="cq-mc hidden">
+          <div id="cq-mc-choices" class="cq-mc-choices"></div>
+          <div class="cq-mc-input-row">
+            <input id="cq-mc-input" class="cq-number-input" type="number"
+              placeholder="번호 입력" autocomplete="off" min="10" max="99">
+            <button id="btn-mc-submit" class="btn btn-primary btn-large">제출</button>
+          </div>
+        </div>
+
+        <!-- 단답형 -->
+        <div id="cq-sa" class="cq-sa hidden">
+          <input id="cq-sa-input" class="cq-sa-input" type="text"
+            placeholder="정답을 입력하세요" autocomplete="off" autocorrect="off">
+          <button id="btn-sa-submit" class="btn btn-primary btn-large">제출</button>
+        </div>
+
+        <!-- 선 잇기 -->
+        <div id="cq-match" class="cq-match hidden">
+          <div id="cq-match-container" class="cq-match-container">
+            <div id="cq-left-col"  class="match-col"></div>
+            <canvas id="cq-match-canvas" class="match-canvas" style="touch-action:none;"></canvas>
+            <div id="cq-right-col" class="match-col"></div>
+          </div>
+          <button id="btn-match-submit" class="btn btn-primary btn-large" disabled>
+            모두 연결 후 제출
+          </button>
+        </div>
+
+        <!-- 복수정답 -->
+        <div id="cq-multi" class="cq-multi hidden">
+          <p class="multi-hint">해당하는 것을 모두 선택하세요</p>
+          <div id="cq-multi-choices" class="cq-multi-choices"></div>
+          <button id="btn-multi-submit" class="btn btn-primary btn-large">제출</button>
+        </div>
+
+        <!-- 순서 -->
+        <div id="cq-order" class="cq-order hidden">
+          <p class="order-hint">순서대로 눌러주세요 (재클릭 시 해당 이후 선택 취소)</p>
+          <div id="cq-order-choices" class="cq-order-choices"></div>
+          <div id="cq-order-sequence" class="cq-order-sequence"></div>
+          <button id="btn-order-submit" class="btn btn-primary btn-large">제출</button>
+        </div>
+      </div>
+
+      <!-- 제출 후 결과 -->
+      <div id="cq-result" class="cq-result hidden"></div>
+    </div>
+
+    <!-- 단계 5: 시상식 -->
+    <div id="cs-ceremony" class="client-section">
+      <div class="ceremony-wrap">
+        <div class="ceremony-emoji">🎉</div>
+        <p class="ceremony-msg">수고했어요!</p>
+      </div>
+    </div>
+
+    <button id="client-mute-btn" class="mute-btn">🔊</button>
+  </div>
+
+  <!-- ===== 관리자 뷰 ===== -->
+  <div id="view-admin" class="view">
+    <div class="admin-wrap">
+
+      <div class="admin-header">
+        <h2 class="admin-title">관리자 패널</h2>
+        <span id="admin-room-badge" class="room-code-badge"></span>
+        <button id="admin-mute-btn" class="mute-btn small">🔊</button>
+        <a href="?" class="btn btn-secondary btn-sm">↩ 처음으로</a>
+      </div>
+
+      <div id="admin-q-panel" class="admin-q-panel">
+        <div id="admin-q-index" class="admin-q-index"></div>
+        <div id="admin-q-preview" class="admin-q-preview">문제를 불러오는 중...</div>
+      </div>
+
+      <div class="admin-controls">
+        <button id="btn-start-countdown" class="btn btn-primary btn-large">▶ 5초 카운트다운</button>
+        <button id="btn-next-question"   class="btn btn-secondary btn-large">다음 문제 ▶▶</button>
+        <button id="btn-skip-question"   class="btn btn-warning btn-large">건너뛰기 ⏭</button>
+        <button id="btn-end-game"        class="btn btn-danger btn-large">게임 끝내기 🏁</button>
+      </div>
+
+      <div id="admin-player-status" class="admin-player-status"></div>
+    </div>
+  </div>
+
+  <!-- 시상식 오버레이 (게임 종료 시) -->
+  <div id="ceremony-overlay" class="ceremony-overlay hidden">
+    <canvas id="fireworks-canvas" class="fireworks-canvas"></canvas>
+    <div class="ceremony-content">
+      <div class="trophy-icon">🏆</div>
+      <h2 class="ceremony-title">게임 종료!</h2>
+      <p class="ceremony-sub">모두 수고했어요!</p>
+    </div>
+  </div>
+
+</div><!-- #app -->
+
+<!-- Firebase SDK (ES Module) -->
+<script type="importmap">
+{
+  "imports": {
+    "firebase/app":      "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js",
+    "firebase/database": "https://www.gstatic.com/firebasejs/12.14.0/firebase-database.js"
+  }
+}
+</script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

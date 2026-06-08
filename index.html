@@ -49,6 +49,23 @@
             <p id="xlsx-status" class="xlsx-status">파일을 선택해주세요</p>
           </div>
 
+          <div class="form-row">
+            <label class="toggle-label">
+              <input id="use-random-keys" type="checkbox" checked class="toggle-checkbox">
+              <span class="toggle-slider"></span>
+              <span class="toggle-text">난수 기능 <span class="hint">(객관식: 번호 타이핑)</span></span>
+            </label>
+            <p class="toggle-desc" id="random-key-desc">체크 해제 시 보기를 직접 클릭해서 선택</p>
+          </div>
+
+          <div class="form-row">
+            <label class="toggle-label">
+              <input id="use-score" type="checkbox" class="toggle-checkbox">
+              <span class="toggle-slider"></span>
+              <span class="toggle-text">점수 기록 <span class="hint">(문제당 1점, 상황판 표시)</span></span>
+            </label>
+          </div>
+
           <button id="btn-create-room" class="btn btn-primary">게임 준비 시작 ▶</button>
         </div>
 
@@ -138,10 +155,10 @@
 
       <div id="cq-answer-area" class="cq-answer-area">
 
-        <!-- 객관식: 번호 타이핑 -->
+        <!-- 객관식: 번호 타이핑 / 클릭 선택 -->
         <div id="cq-mc" class="cq-mc hidden">
           <div id="cq-mc-choices" class="cq-mc-choices"></div>
-          <div class="cq-mc-input-row">
+          <div id="cq-mc-input-row" class="cq-mc-input-row">
             <input id="cq-mc-input" class="cq-number-input" type="number"
               placeholder="번호 입력" autocomplete="off" min="10" max="99">
             <button id="btn-mc-submit" class="btn btn-primary btn-large">제출</button>

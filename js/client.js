@@ -43,8 +43,13 @@ export function showWaiting(msg = '게임 시작 대기 중...') {
 }
 
 // ── 카운트다운 화면 ──
-let _cdTimer = null;
+let _cdTimer  = null;
+let _cdActive = false; // 카운트다운 중복 실행 방지 플래그
+
 export function showClientCountdown(seconds, onDone) {
+  if (_cdActive) return; // 이미 카운트다운 진행 중이면 무시 (Firebase 이중 트리거 방지)
+  _cdActive = true;
+
   showSection('cs-countdown');
   clearInterval(_cdTimer);
   const numEl = document.getElementById('cs-countdown-num');
@@ -56,6 +61,7 @@ export function showClientCountdown(seconds, onDone) {
     n--;
     if (n <= 0) {
       clearInterval(_cdTimer);
+      _cdActive = false;
       if (numEl) numEl.textContent = 'GO!';
       Sound.playLastTick();
       setTimeout(() => { if (onDone) onDone(); }, 600);
@@ -66,10 +72,22 @@ export function showClientCountdown(seconds, onDone) {
   }, 1000);
 }
 
+// 다음 문제 시작 전(IDLE 단계) 카운트다운 상태 초기화
+export function resetCountdownState() {
+  _cdActive = false;
+  clearInterval(_cdTimer);
+}
+
 // ── 퀴즈 화면 ──
-let _timerInterval = null;
+let _timerInterval    = null;
 let _questionStartTime = null;
-let _submitted = false;
+let _serverTimeOffset  = 0; // app.js에서 전달받는 서버-클라이언트 시계 보정값
+let _submitted         = false;
+
+// 서버 기준 현재 시간 (기기 시계 차이 보정)
+function serverNow() {
+  return Date.now() + _serverTimeOffset;
+}
 
 // 이전 문제에서 잠긴 입력 요소를 다음 문제를 위해 다시 활성화
 function unlockInputs() {
@@ -83,10 +101,11 @@ function unlockInputs() {
   if (area) area.style.opacity = '';
 }
 
-export function showQuiz({ playerId, question, mcNumbers, questionStart, onSubmit }) {
+export function showQuiz({ playerId, question, mcNumbers, questionStart, serverTimeOffset = 0, useRandomKeys = true, onSubmit }) {
   showSection('cs-quiz');
-  _submitted = false;
+  _submitted         = false;
   _questionStartTime = questionStart;
+  _serverTimeOffset  = serverTimeOffset; // 보정값 저장
   unlockInputs();
 
   // 플레이어 배지
@@ -126,7 +145,7 @@ export function showQuiz({ playerId, question, mcNumbers, questionStart, onSubmi
 
   // 유형별 입력 렌더링
   switch (question.type) {
-    case '객관식':   renderMC(question, mcNumbers, onSubmit);    break;
+    case '객관식':   renderMC(question, mcNumbers, onSubmit, useRandomKeys); break;
     case '단답형':   renderSA(question, onSubmit);               break;
     case '선잇기':   renderMatching(question, onSubmit);         break;
     case '복수정답': renderMultiAnswer(question, onSubmit);      break;
@@ -140,7 +159,7 @@ function startTimer() {
   const el = document.getElementById('cq-timer');
   _timerInterval = setInterval(() => {
     if (!_questionStartTime) return;
-    const elapsed = (Date.now() - _questionStartTime) / 1000;
+    const elapsed = Math.max(0, (serverNow() - _questionStartTime) / 1000);
     if (el) el.textContent = elapsed.toFixed(1) + '초';
   }, 100);
 }
@@ -151,7 +170,8 @@ function stopTimer() {
 
 function getElapsed() {
   if (!_questionStartTime) return 0;
-  return (Date.now() - _questionStartTime) / 1000;
+  // Math.max(0, ...) 으로 시계 차이로 인한 음수 방지
+  return Math.max(0, (serverNow() - _questionStartTime) / 1000);
 }
 
 // 제출 공통 처리
@@ -165,36 +185,35 @@ function doSubmit(value, displayValue, question, mcNumbers, onSubmit) {
   let correct = false;
   if (question.type === '객관식') {
     const normalize = s => String(s).replace(/\s+/g, '').toLowerCase();
-    // choices·mcNumbers는 renderMC에서 이미 배열로 전달되지만 방어적으로 재처리
     const choices   = toArray(question.choices);
     const mcNums    = mcNumbers ? toArray(mcNumbers) : null;
-    const normalAns = normalize(question.rawAnswer);
 
-    // 전략 1: 공백·대소문자 정규화 후 텍스트 일치
-    let correctIdx = choices.findIndex(c => normalize(c) === normalAns);
-
-    // 전략 2: 파싱 시 저장된 인덱스 (텍스트 매칭 실패 시 보조)
-    if (correctIdx < 0 && question.correctChoiceIdx >= 0) {
-      correctIdx = question.correctChoiceIdx;
-    }
-
-    // 전략 3: rawAnswer가 "2"처럼 1-based 숫자인 경우 대응
-    if (correctIdx < 0) {
-      const numIdx = parseInt(question.rawAnswer, 10) - 1;
-      if (!isNaN(numIdx) && numIdx >= 0 && numIdx < choices.length) {
-        correctIdx = numIdx;
+    if (mcNums && mcNums.length > 0) {
+      // 난수 모드: 입력된 번호와 정답 번호 비교
+      const normalAns = normalize(question.rawAnswer);
+      let correctIdx  = choices.findIndex(c => normalize(c) === normalAns);
+      if (correctIdx < 0 && question.correctChoiceIdx >= 0) correctIdx = question.correctChoiceIdx;
+      if (correctIdx < 0) {
+        const numIdx = parseInt(question.rawAnswer, 10) - 1;
+        if (!isNaN(numIdx) && numIdx >= 0 && numIdx < choices.length) correctIdx = numIdx;
       }
+      const correctNum = correctIdx >= 0 ? mcNums[correctIdx] : -1;
+      console.log('[객관식 판정-난수]', { rawAnswer: question.rawAnswer, correctIdx, correctNum, input: value });
+      correct = checkMultipleChoice(value, correctNum);
+    } else {
+      // 클릭 모드: 난수 모드와 동일한 3단계 전략으로 정답 인덱스를 구한 뒤 인덱스 비교
+      // (rawAnswer가 텍스트든 숫자든 모두 처리)
+      const normalAns  = normalize(question.rawAnswer);
+      let correctIdx   = choices.findIndex(ch => normalize(ch) === normalAns);
+      if (correctIdx < 0 && question.correctChoiceIdx >= 0) correctIdx = question.correctChoiceIdx;
+      if (correctIdx < 0) {
+        const numIdx = parseInt(question.rawAnswer, 10) - 1;
+        if (!isNaN(numIdx) && numIdx >= 0 && numIdx < choices.length) correctIdx = numIdx;
+      }
+      const clickedIdx = choices.findIndex(ch => normalize(ch) === normalize(value));
+      correct = clickedIdx !== -1 && clickedIdx === correctIdx;
+      console.log('[객관식 판정-클릭]', { rawAnswer: question.rawAnswer, correctIdx, clickedIdx, correct });
     }
-
-    const correctNum = (mcNums && correctIdx >= 0) ? mcNums[correctIdx] : -1;
-
-    // 디버그 로그 (정답 판정 불일치 시 콘솔에서 확인)
-    console.log('[객관식 판정]', {
-      rawAnswer: question.rawAnswer, choices, normalAns,
-      correctIdx, mcNums, correctNum, input: value
-    });
-
-    correct = checkMultipleChoice(value, correctNum);
   } else if (question.type === '단답형') {
     correct = checkShortAnswer(value, question.rawAnswer);
   } else if (question.type === '선잇기') {
@@ -246,38 +265,61 @@ function toArray(v) {
 }
 
 // ── 객관식 ──
-function renderMC(q, mcNumbers, onSubmit) {
-  const wrap = document.getElementById('cq-mc');
+function renderMC(q, mcNumbers, onSubmit, useRandomKeys) {
+  const wrap        = document.getElementById('cq-mc');
   const choicesWrap = document.getElementById('cq-mc-choices');
-  const input = document.getElementById('cq-mc-input');
-  const btnSubmit = document.getElementById('btn-mc-submit');
+  const input       = document.getElementById('cq-mc-input');
+  const inputRow    = document.getElementById('cq-mc-input-row');
+  const btnSubmit   = document.getElementById('btn-mc-submit');
   if (!wrap) return;
 
   wrap.classList.remove('hidden');
   choicesWrap.innerHTML = '';
-  input.value = '';
 
-  // choices와 mcNumbers를 모두 안전한 배열로 변환
+  // 매 렌더링 시작 시 입력행·input 표시 상태를 명시적으로 초기화
+  // (이전 클릭 모드 렌더링에서 남은 style 잔여값 제거)
+  if (inputRow) inputRow.style.display = '';
+  if (input)    input.style.display    = '';
+
   const choices = toArray(q.choices);
   const mcNums  = mcNumbers ? toArray(mcNumbers) : null;
 
-  choices.forEach((c, i) => {
-    const num = mcNums ? mcNums[i] : (10 + i);
-    const item = document.createElement('div');
-    item.className = 'mc-choice-item';
-    item.innerHTML = `<span class="mc-choice-num">${num}</span>${c}`;
-    choicesWrap.appendChild(item);
-  });
+  if (useRandomKeys && mcNums && mcNums.length > 0) {
+    // ── 난수 모드: 번호 표시 + 숫자 타이핑 ──
+    input.value        = '';
+    btnSubmit.disabled = false;
 
-  const submit = () => {
-    const val = input.value.trim();
-    if (!val) return;
-    // doSubmit에 정규화된 배열을 전달
-    doSubmit(val, val, { ...q, choices }, mcNums, onSubmit);
-  };
-  btnSubmit.onclick = submit;
-  input.onkeydown = (e) => { if (e.key === 'Enter') submit(); };
-  input.focus();
+    choices.forEach((c, i) => {
+      const item = document.createElement('div');
+      item.className = 'mc-choice-item';
+      item.innerHTML = `<span class="mc-choice-num">${mcNums[i]}</span>${c}`;
+      choicesWrap.appendChild(item);
+    });
+
+    const submit = () => {
+      const val = input.value.trim();
+      if (!val) return;
+      doSubmit(val, val, { ...q, choices }, mcNums, onSubmit);
+    };
+    btnSubmit.onclick = submit;
+    input.onkeydown   = (e) => { if (e.key === 'Enter') submit(); };
+    input.focus();
+  } else {
+    // ── 클릭 모드: 번호·입력행 숨기고 보기 버튼 클릭 → 즉시 제출 ──
+    if (inputRow) inputRow.style.display = 'none';
+
+    choices.forEach((c) => {
+      const btn = document.createElement('button');
+      btn.className   = 'mc-click-btn';
+      btn.textContent = c;
+      btn.addEventListener('click', () => {
+        choicesWrap.querySelectorAll('.mc-click-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        doSubmit(c, c, { ...q, choices }, null, onSubmit);
+      });
+      choicesWrap.appendChild(btn);
+    });
+  }
 }
 
 // ── 단답형 ──

@@ -17,6 +17,18 @@ import * as Sound                               from './sound.js';
 const fbApp = initializeApp(firebaseConfig);
 const db    = getDatabase(fbApp);
 
+// 서버-클라이언트 시계 차이(clock skew) 동기화
+// 크롬북 등 기기 시계가 어긋나 있어도 서버 기준으로 정확한 시간을 계산
+let _serverTimeOffset = 0;
+onValue(ref(db, '.info/serverTimeOffset'), snap => {
+  _serverTimeOffset = snap.val() || 0;
+});
+
+// 서버 현재 시간(ms) = 클라이언트 시간 + 오프셋
+function serverNow() {
+  return Date.now() + _serverTimeOffset;
+}
+
 // Firebase 경로 헬퍼
 const R = {
   room:      (c)        => ref(db, `rooms/${c}`),
@@ -28,16 +40,20 @@ const R = {
   gameState: (c)        => ref(db, `rooms/${c}/gameState`),
   answers:   (c, qi)    => ref(db, `rooms/${c}/answers/${qi}`),
   answer:    (c, qi, p) => ref(db, `rooms/${c}/answers/${qi}/${p}`),
+  scores:    (c)        => ref(db, `rooms/${c}/scores`),
+  score:     (c, p)     => ref(db, `rooms/${c}/scores/${p}`),
 };
 
 // ── 전역 상태 ──
 let state = {
-  roomCode:    null,
-  role:        null,   // 'admin' | 'student' | 'board'
-  myPlayerId:  null,   // P1~P6 (학생용)
-  playerCount: 4,
-  questions:   [],
-  playerIds:   [],
+  roomCode:      null,
+  role:          null,   // 'admin' | 'student' | 'board'
+  myPlayerId:    null,   // P1~P6 (학생용)
+  playerCount:   4,
+  useRandomKeys: true,   // 객관식 난수 모드 여부
+  useScore:      false,  // 점수 기록 모드 여부
+  questions:     [],
+  playerIds:     [],
   unsubscribers: []
 };
 
@@ -86,7 +102,7 @@ async function main() {
 }
 
 // ── 방 만들기 (관리자) ──
-async function handleCreateRoom(code, playerCount, questions) {
+async function handleCreateRoom(code, playerCount, questions, useRandomKeys = true, useScore = false) {
   // 이미 같은 코드의 방이 있으면 경고
   const existing = await get(R.meta(code));
   if (existing.exists()) {
@@ -104,10 +120,15 @@ async function handleCreateRoom(code, playerCount, questions) {
   const questionsObj = {};
   questions.forEach((q, i) => { questionsObj[i] = q; });
 
+  // 점수 기록 모드이면 모든 플레이어 점수를 0으로 초기화
+  const scoresInit = {};
+  if (useScore) state.playerIds.forEach(pid => { scoresInit[pid] = 0; });
+
   await set(R.room(code), {
-    meta:      { playerCount, status: 'playing', createdAt: Date.now() },
+    meta:      { playerCount, status: 'playing', createdAt: Date.now(), useRandomKeys, useScore },
     players:   playersInit,
     questions: questionsObj,
+    scores:    useScore ? scoresInit : null,
     gameState: {
       currentQuestion: 0,
       phase:           PHASE.IDLE,
@@ -116,9 +137,11 @@ async function handleCreateRoom(code, playerCount, questions) {
     }
   });
 
-  state.roomCode = code;
-  state.role     = 'admin';
-  state.questions= questions;
+  state.roomCode      = code;
+  state.role          = 'admin';
+  state.questions     = questions;
+  state.useRandomKeys = useRandomKeys;
+  state.useScore      = useScore;
   enterAdmin(code);
 
   // 상황판 팝업 자동 실행 (16:9 비율)
@@ -140,10 +163,13 @@ async function handleJoin(code, role) {
     return;
   }
   const meta = snap.val();
-  state.roomCode    = code;
-  state.role        = role;
-  state.playerCount = meta.playerCount;
-  state.playerIds   = GAME.PLAYER_IDS.slice(0, meta.playerCount);
+  state.roomCode      = code;
+  state.role          = role;
+  state.playerCount   = meta.playerCount;
+  state.playerIds     = GAME.PLAYER_IDS.slice(0, meta.playerCount);
+  state.useRandomKeys = meta.useRandomKeys !== false; // 누락 시 기본값 true
+  state.useScore      = !!meta.useScore;              // 누락 시 기본값 false
+  console.log('[handleJoin]', { role, useScore: state.useScore, raw: meta.useScore });
 
   // 문제 데이터 불러오기
   const qSnap = await get(R.questions(code));
@@ -174,7 +200,7 @@ function enterBoard(code) {
   const roomEl = document.getElementById('board-room-code');
   if (roomEl) roomEl.textContent = `방: ${code}`;
 
-  Board.renderPlayerPanels(state.playerIds);
+  Board.renderPlayerPanels(state.playerIds, state.useScore);
 
   // 접속 상태 리스너
   const unsubPlayers = onValue(R.players(code), snap => {
@@ -191,6 +217,17 @@ function enterBoard(code) {
     const game = snap.val();
     handleBoardGameUpdate(code, game);
   });
+
+  // 점수 리스너 (점수 기록 모드일 때만)
+  if (state.useScore) {
+    const unsubScores = onValue(R.scores(code), snap => {
+      const scores = snap.exists() ? snap.val() : {};
+      state.playerIds.forEach(pid => {
+        Board.updateScore(pid, scores[pid] || 0);
+      });
+    });
+    state.unsubscribers.push(unsubScores);
+  }
 
   // 방 삭제 감지
   const unsubMeta = onValue(R.meta(code), snap => {
@@ -213,20 +250,20 @@ async function handleBoardGameUpdate(code, game) {
   }
 
   if (game.phase === PHASE.COUNTDOWN) {
-    const elapsed   = (Date.now() - game.countdownStartAt) / 1000;
+    // serverNow()로 서버 기준 elapsed 계산 → 기기 시계 차이 보정
+    const elapsed   = (serverNow() - game.countdownStartAt) / 1000;
     const remaining = Math.max(1, GAME.COUNTDOWN_SECONDS - Math.floor(elapsed));
     Board.showCountdown(remaining, () => {});
     return;
   }
 
   if (game.phase === PHASE.ANSWERING && q) {
-    // randomKeys는 question 노드 안에 있으므로 Firebase에서 직접 읽음
     let mcNumbers = null;
-    if (q.type === '객관식') {
+    if (q.type === '객관식' && state.useRandomKeys) {
       const qSnap = await get(R.question(code, qi));
       mcNumbers   = qSnap.val()?.randomKeys || null;
     }
-    Board.showQuestion(q, qi, state.questions.length, { mcNumbers });
+    Board.showQuestion(q, qi, state.questions.length, { mcNumbers, useRandomKeys: state.useRandomKeys });
 
     // 답변 실시간 리스너
     if (_boardAnswerUnsub) { _boardAnswerUnsub(); _boardAnswerUnsub = null; }
@@ -314,15 +351,16 @@ async function startCountdown(code) {
   const qi = game.currentQuestion;
   const q  = state.questions[qi];
 
-  // 객관식이면 randomKeys를 question 노드 안에 저장 (모든 클라이언트 동기화)
-  if (q?.type === '객관식') {
+  // 난수 모드일 때만 randomKeys 생성·저장 (클릭 모드에서는 불필요)
+  if (q?.type === '객관식' && state.useRandomKeys) {
     const nums = generateMcNumbers(q.choices.length);
     await update(R.question(code, qi), { randomKeys: nums });
   }
 
+  // serverTimestamp()를 사용해 서버 기준 절대 시간으로 저장 (기기 시계 차이 무관)
   await update(R.gameState(code), {
     phase:           PHASE.COUNTDOWN,
-    countdownStartAt: Date.now()
+    countdownStartAt: serverTimestamp()
   });
 
   // 5초 후 answering 단계로 자동 전환
@@ -331,7 +369,7 @@ async function startCountdown(code) {
     if (fresh.val()?.phase !== PHASE.COUNTDOWN) return;
     await update(R.gameState(code), {
       phase:          PHASE.ANSWERING,
-      questionStartAt: Date.now()
+      questionStartAt: serverTimestamp()
     });
   }, GAME.COUNTDOWN_SECONDS * 1000);
 }
@@ -435,6 +473,7 @@ async function handleStudentGameUpdate(code, playerId, game) {
 
   if (game.phase === PHASE.IDLE) {
     _currentQIdx = -1;
+    Client.resetCountdownState(); // 다음 카운트다운을 위해 플래그 초기화
     // 방 재생성(동일 코드 덮어쓰기) 시 players가 초기화되므로 접속 상태 재등록
     const pSnap = await get(R.player(code, playerId));
     if (!pSnap.exists() || !pSnap.val().connected) {
@@ -445,7 +484,8 @@ async function handleStudentGameUpdate(code, playerId, game) {
   }
 
   if (game.phase === PHASE.COUNTDOWN) {
-    const elapsed   = (Date.now() - game.countdownStartAt) / 1000;
+    // serverNow()로 서버 기준 elapsed 계산 → 기기 시계 차이 보정
+    const elapsed   = (serverNow() - game.countdownStartAt) / 1000;
     const remaining = Math.max(1, GAME.COUNTDOWN_SECONDS - Math.floor(elapsed));
     Client.showClientCountdown(remaining, () => {});
     return;
@@ -463,12 +503,11 @@ async function handleStudentGameUpdate(code, playerId, game) {
     const q = state.questions[qi];
     if (!q) return;
 
-    // 객관식이면 question 노드에서 randomKeys 읽기
+    // 난수 모드일 때만 randomKeys 읽기
     let mcNumbers = null;
-    if (q.type === '객관식') {
+    if (q.type === '객관식' && state.useRandomKeys) {
       const qSnap = await get(R.question(code, qi));
       const raw   = qSnap.val()?.randomKeys;
-      // Firebase는 배열을 객체로 저장할 수 있으므로 무조건 배열로 정규화
       if (raw != null) {
         mcNumbers = Array.isArray(raw) ? raw : Object.values(raw);
       }
@@ -476,9 +515,11 @@ async function handleStudentGameUpdate(code, playerId, game) {
 
     Client.showQuiz({
       playerId,
-      question:      q,
+      question:         q,
       mcNumbers,
-      questionStart: game.questionStartAt,
+      questionStart:    game.questionStartAt,
+      serverTimeOffset: _serverTimeOffset,
+      useRandomKeys:    state.useRandomKeys, // 클라이언트 UI 모드 전달
       onSubmit: (result) => submitAnswer(code, qi, playerId, result)
     });
     return;
@@ -494,15 +535,37 @@ async function submitAnswer(code, qIndex, playerId, { value, displayValue, corre
   // 직렬화: 배열은 JSON 문자열로 저장
   const serialized = Array.isArray(value) ? JSON.stringify(value) : String(value);
 
-  await set(R.answer(code, qIndex, playerId), {
-    value:        serialized,
-    displayValue: displayValue || serialized,
-    correct,
-    elapsedSec,
-    submittedAt:  Date.now()   // 서버 타임스탬프 대신 클라이언트 시간 사용
-    // Note: serverTimestamp()는 set()과 함께 쓸 수 없어 클라이언트 시간 사용
-    // 동점 처리는 ms 단위 차이가 같을 때만 공동 순위
-  });
+  try {
+    await set(R.answer(code, qIndex, playerId), {
+      value:        serialized,
+      displayValue: displayValue || serialized,
+      correct,
+      elapsedSec,
+      submittedAt:  Date.now()
+    });
+  } catch (err) {
+    console.error('[답변 저장 오류]', err);
+    return;
+  }
+
+  // 정답이면 점수 증가 시도
+  // state.useScore 대신 Firebase meta를 직접 읽어 신뢰성 확보
+  if (correct) {
+    try {
+      const metaSnap = await get(R.meta(code));
+      const useScore = !!(metaSnap.exists() && metaSnap.val()?.useScore);
+      console.log('[점수 체크]', { correct, useScore, playerId });
+
+      if (useScore) {
+        const scoreSnap = await get(R.score(code, playerId));
+        const newScore  = (scoreSnap.val() ?? 0) + 1;
+        await set(R.score(code, playerId), newScore);
+        console.log('[점수 업데이트]', { playerId, newScore });
+      }
+    } catch (err) {
+      console.error('[점수 업데이트 오류]', err);
+    }
+  }
 }
 
 // ── 세팅으로 돌아가기 ──

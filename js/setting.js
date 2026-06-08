@@ -14,6 +14,20 @@ export function initSettingView({ onCreateRoom, onJoinStudent, onJoinBoard, onJo
   const btnStudent       = document.getElementById('btn-join-student');
   const btnBoard         = document.getElementById('btn-join-board');
   const btnAdmin         = document.getElementById('btn-join-admin');
+  const useRandomKeysChk = document.getElementById('use-random-keys');
+  const randomKeyDesc    = document.getElementById('random-key-desc');
+  const useScoreChk      = document.getElementById('use-score');
+
+  // 토글 설명 텍스트 실시간 업데이트
+  if (useRandomKeysChk && randomKeyDesc) {
+    const updateDesc = () => {
+      randomKeyDesc.textContent = useRandomKeysChk.checked
+        ? '체크 해제 시 보기를 직접 클릭해서 선택'
+        : '✅ 클릭 모드: 보기 버튼을 눌러서 선택';
+    };
+    useRandomKeysChk.addEventListener('change', updateDesc);
+    updateDesc();
+  }
 
   let parsedQuestions = null;
 
@@ -47,13 +61,15 @@ export function initSettingView({ onCreateRoom, onJoinStudent, onJoinBoard, onJo
 
   // 방 만들기 (관리자)
   btnCreate.addEventListener('click', () => {
-    const code        = createCodeInput.value.trim();
-    const playerCount = parseInt(playerCountSel.value);
+    const code          = createCodeInput.value.trim();
+    const playerCount   = parseInt(playerCountSel.value);
+    const useRandomKeys = useRandomKeysChk ? useRandomKeysChk.checked : true;
+    const useScore      = useScoreChk      ? useScoreChk.checked      : false;
 
     if (code.length !== 4)   { showMsg('방 코드는 4자리로 입력해주세요.', 'error'); return; }
     if (!parsedQuestions)    { showMsg('먼저 엑셀 파일을 업로드해주세요.', 'error'); return; }
 
-    onCreateRoom(code, playerCount, parsedQuestions);
+    onCreateRoom(code, playerCount, parsedQuestions, useRandomKeys, useScore);
   });
 
   // 학생 참여

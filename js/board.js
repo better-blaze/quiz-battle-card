@@ -5,15 +5,16 @@
 import * as Sound from './sound.js';
 
 // 플레이어 패널 초기 렌더링
-export function renderPlayerPanels(playerIds) {
+export function renderPlayerPanels(playerIds, useScore = false) {
   const wrap = document.getElementById('board-players');
   if (!wrap) return;
   wrap.innerHTML = '';
   playerIds.forEach(pid => {
     const div = document.createElement('div');
-    div.className   = 'player-panel';
-    div.id          = `panel-${pid}`;
-    div.innerHTML   = `
+    div.className = 'player-panel';
+    div.id        = `panel-${pid}`;
+    div.innerHTML = `
+      ${useScore ? `<div class="player-score" id="score-${pid}">0점</div>` : ''}
       <div class="player-name">${pid}</div>
       <div class="player-status-dot" id="dot-${pid}"></div>
       <div class="player-submit-badge" id="badge-${pid}">대기 중</div>
@@ -22,6 +23,12 @@ export function renderPlayerPanels(playerIds) {
     `;
     wrap.appendChild(div);
   });
+}
+
+// 플레이어 점수 업데이트
+export function updateScore(pid, score) {
+  const el = document.getElementById(`score-${pid}`);
+  if (el) el.textContent = `${score}점`;
 }
 
 // 접속 상태 업데이트
@@ -61,15 +68,23 @@ export function showQuestion(q, qIndex, total, options = {}) {
     }
   }
 
-  // 객관식: 난수 번호와 함께 보기 표시
-  if (q.type === '객관식' && options.mcNumbers && choicesEl) {
-    const nums    = toArr(options.mcNumbers);
+  // 객관식 보기 표시
+  if (q.type === '객관식' && choicesEl) {
     const choices = toArr(q.choices);
-    choicesEl.innerHTML = choices.map((c, i) =>
-      `<div class="board-choice-item">
-        <span class="board-choice-num">${nums[i]}</span>${c}
-      </div>`
-    ).join('');
+    if (options.mcNumbers && toArr(options.mcNumbers).length > 0) {
+      // 난수 모드: 번호와 함께 표시
+      const nums = toArr(options.mcNumbers);
+      choicesEl.innerHTML = choices.map((c, i) =>
+        `<div class="board-choice-item">
+          <span class="board-choice-num">${nums[i]}</span>${c}
+        </div>`
+      ).join('');
+    } else {
+      // 클릭 모드: 번호 없이 보기만 표시
+      choicesEl.innerHTML = choices.map(c =>
+        `<div class="board-choice-item">${c}</div>`
+      ).join('');
+    }
   }
 
   // 복수정답·순서: 번호(1,2,3…)와 함께 보기 표시
@@ -101,7 +116,12 @@ export function showQuestion(q, qIndex, total, options = {}) {
 
 // 카운트다운 표시
 let _cdInterval = null;
+let _cdActive   = false; // 카운트다운 중복 실행 방지 플래그
+
 export function showCountdown(startSec, onDone) {
+  if (_cdActive) return; // 이미 카운트다운 진행 중이면 무시
+  _cdActive = true;
+
   const el = document.getElementById('board-countdown');
   if (!el) return;
   el.classList.remove('hidden');
@@ -115,6 +135,7 @@ export function showCountdown(startSec, onDone) {
     n--;
     if (n <= 0) {
       clearInterval(_cdInterval);
+      _cdActive = false;
       el.textContent = 'START!';
       Sound.playLastTick();
       setTimeout(() => { el.classList.add('hidden'); if (onDone) onDone(); }, 800);
@@ -127,6 +148,7 @@ export function showCountdown(startSec, onDone) {
 
 export function hideCountdown() {
   clearInterval(_cdInterval);
+  _cdActive = false; // 다음 카운트다운을 위해 플래그 초기화
   const el = document.getElementById('board-countdown');
   if (el) el.classList.add('hidden');
 }

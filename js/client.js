@@ -264,6 +264,25 @@ function toArray(v) {
   return Array.isArray(v) ? v : Object.values(v);
 }
 
+// 보기 텍스트가 http(s)://로 시작하면 <img> HTML, 아니면 텍스트 span HTML 반환
+function choiceContentHtml(text) {
+  if (/^https?:\/\//i.test(text)) {
+    const img = document.createElement('img');
+    img.src       = text;
+    img.className = 'choice-img';
+    img.alt       = '이미지 보기';
+    return img.outerHTML;
+  }
+  const span = document.createElement('span');
+  span.textContent = text;
+  return span.outerHTML;
+}
+
+// URL 보기의 표시 이름 반환 (순서 선택 표시·응답 기록 등에서 사용)
+function choiceLabel(text, index) {
+  return /^https?:\/\//i.test(text) ? `이미지 ${index + 1}` : text;
+}
+
 // ── 객관식 ──
 function renderMC(q, mcNumbers, onSubmit, useRandomKeys) {
   const wrap        = document.getElementById('cq-mc');
@@ -292,7 +311,7 @@ function renderMC(q, mcNumbers, onSubmit, useRandomKeys) {
     choices.forEach((c, i) => {
       const item = document.createElement('div');
       item.className = 'mc-choice-item';
-      item.innerHTML = `<span class="mc-choice-num">${mcNums[i]}</span>${c}`;
+      item.innerHTML = `<span class="mc-choice-num">${mcNums[i]}</span>${choiceContentHtml(c)}`;
       choicesWrap.appendChild(item);
     });
 
@@ -310,12 +329,12 @@ function renderMC(q, mcNumbers, onSubmit, useRandomKeys) {
 
     choices.forEach((c) => {
       const btn = document.createElement('button');
-      btn.className   = 'mc-click-btn';
-      btn.textContent = c;
+      btn.className = 'mc-click-btn';
+      btn.innerHTML = choiceContentHtml(c);
       btn.addEventListener('click', () => {
         choicesWrap.querySelectorAll('.mc-click-btn').forEach(b => b.classList.remove('selected'));
         btn.classList.add('selected');
-        doSubmit(c, c, { ...q, choices }, null, onSubmit);
+        doSubmit(c, choiceLabel(c, choices.indexOf(c)), { ...q, choices }, null, onSubmit);
       });
       choicesWrap.appendChild(btn);
     });
@@ -476,8 +495,8 @@ function renderMultiAnswer(q, onSubmit) {
 
   q.choices.forEach((c, i) => {
     const btn = document.createElement('button');
-    btn.className   = 'multi-choice-btn';
-    btn.textContent = c;
+    btn.className = 'multi-choice-btn';
+    btn.innerHTML = choiceContentHtml(c);
     btn.addEventListener('click', () => {
       if (selected.has(i)) { selected.delete(i); btn.classList.remove('selected'); }
       else                 { selected.add(i);    btn.classList.add('selected'); }
@@ -509,7 +528,7 @@ function renderOrder(q, onSubmit) {
     const btn = document.createElement('button');
     btn.className   = 'order-choice-btn';
     btn.dataset.idx = i;
-    btn.innerHTML   = `<span class="order-seq-num" id="oseq-${i}"></span>${c}`;
+    btn.innerHTML   = `<span class="order-seq-num" id="oseq-${i}"></span>${choiceContentHtml(c)}`;
     btn.addEventListener('click', () => {
       const pos = sequence.indexOf(i);
       if (pos !== -1) {
@@ -527,7 +546,7 @@ function renderOrder(q, onSubmit) {
       }
       // 순서 텍스트 갱신
       seqEl.textContent = sequence.length
-        ? '선택된 순서: ' + sequence.map(idx => q.choices[idx]).join(' → ')
+        ? '선택된 순서: ' + sequence.map(idx => choiceLabel(q.choices[idx], idx)).join(' → ')
         : '선택된 순서: (없음)';
     });
     choicesWr.appendChild(btn);

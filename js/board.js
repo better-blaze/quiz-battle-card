@@ -44,6 +44,14 @@ function toArr(v) {
   return Array.isArray(v) ? v : Object.values(v);
 }
 
+// 보기가 http(s)://로 시작하면 img 태그, 아니면 이스케이프된 텍스트 반환
+function choiceHtml(c) {
+  if (/^https?:\/\//i.test(c)) {
+    return `<img src="${String(c).replace(/"/g, '&quot;')}" class="choice-img" alt="이미지 보기">`;
+  }
+  return String(c).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 // 문제 표시
 export function showQuestion(q, qIndex, total, options = {}) {
   const phaseEl   = document.getElementById('board-phase-label');
@@ -76,13 +84,13 @@ export function showQuestion(q, qIndex, total, options = {}) {
       const nums = toArr(options.mcNumbers);
       choicesEl.innerHTML = choices.map((c, i) =>
         `<div class="board-choice-item">
-          <span class="board-choice-num">${nums[i]}</span>${c}
+          <span class="board-choice-num">${nums[i]}</span>${choiceHtml(c)}
         </div>`
       ).join('');
     } else {
       // 클릭 모드: 번호 없이 보기만 표시
       choicesEl.innerHTML = choices.map(c =>
-        `<div class="board-choice-item">${c}</div>`
+        `<div class="board-choice-item">${choiceHtml(c)}</div>`
       ).join('');
     }
   }
@@ -92,7 +100,7 @@ export function showQuestion(q, qIndex, total, options = {}) {
     const choices = toArr(q.choices);
     choicesEl.innerHTML = choices.map((c, i) =>
       `<div class="board-choice-item">
-        <span class="board-choice-num">${i + 1}</span>${c}
+        <span class="board-choice-num">${i + 1}</span>${choiceHtml(c)}
       </div>`
     ).join('');
   }

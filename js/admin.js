@@ -2,6 +2,9 @@
 // admin.js — 관리자 뷰 초기화 및 UI 업데이트
 // =============================================
 
+// 방향키 단축키 핸들러 (재진입 시 중복 등록 방지용으로 참조 보관)
+let _adminKeydownHandler = null;
+
 export function initAdminView({ roomCode, onStartCountdown, onNextQuestion, onSkipQuestion, onEndGame, onFlipAllCards }) {
   const roomBadge = document.getElementById('admin-room-badge');
   if (roomBadge) roomBadge.textContent = `방: ${roomCode}`;
@@ -13,6 +16,22 @@ export function initAdminView({ roomCode, onStartCountdown, onNextQuestion, onSk
     if (confirm('게임을 끝내시겠습니까?')) onEndGame();
   });
   document.getElementById('btn-flip-all-cards') ?.addEventListener('click', onFlipAllCards);
+
+  // ── 방향키 단축키: ↑ = 5초 카운트다운, ↓ = 다음 문제 ──
+  // 관리자 뷰가 화면에 떠 있을 때만 동작하도록 매번 확인
+  if (_adminKeydownHandler) document.removeEventListener('keydown', _adminKeydownHandler);
+  _adminKeydownHandler = (e) => {
+    if (!document.getElementById('view-admin')?.classList.contains('active')) return;
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const btn = document.getElementById('btn-start-countdown');
+      if (btn && !btn.disabled) onStartCountdown();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      onNextQuestion();
+    }
+  };
+  document.addEventListener('keydown', _adminKeydownHandler);
 }
 
 // 카드 모두 뒤집기 버튼 활성/비활성

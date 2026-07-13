@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Quiz Battle Royale</title>
+  <title>Quiz Battle Card</title>
   <!-- SheetJS: .xlsx 파싱 라이브러리 (CDN) -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <link rel="stylesheet" href="css/style.css">
@@ -15,8 +15,8 @@
   <div id="view-setting" class="view active">
     <div class="setting-wrap">
       <div class="logo-area">
-        <h1 class="logo-text">Quiz Battle Royale</h1>
-        <p class="logo-sub">개인전 실시간 퀴즈 게임</p>
+        <h1 class="logo-text">Quiz Battle Card</h1>
+        <p class="logo-sub">카드 점수 배틀 퀴즈 게임</p>
       </div>
 
       <div class="setting-cards">
@@ -32,39 +32,12 @@
           </div>
 
           <div class="form-row">
-            <label>플레이어 수</label>
-            <select id="player-count-select" class="select-big">
-              <option value="3">3명</option>
-              <option value="4" selected>4명</option>
-              <option value="5">5명</option>
-              <option value="6">6명</option>
-            </select>
-          </div>
-
-          <div class="form-row">
             <label>문제 파일 <span class="hint">(.xlsx)</span></label>
             <label class="file-upload-label" for="xlsx-file-input">
               📂 파일 선택
               <input id="xlsx-file-input" type="file" accept=".xlsx" style="display:none">
             </label>
             <p id="xlsx-status" class="xlsx-status">파일을 선택해주세요</p>
-          </div>
-
-          <div class="form-row">
-            <label class="toggle-label">
-              <input id="use-random-keys" type="checkbox" checked class="toggle-checkbox">
-              <span class="toggle-slider"></span>
-              <span class="toggle-text">난수 기능 <span class="hint">(객관식: 번호 타이핑)</span></span>
-            </label>
-            <p class="toggle-desc" id="random-key-desc">체크 해제 시 보기를 직접 클릭해서 선택</p>
-          </div>
-
-          <div class="form-row">
-            <label class="toggle-label">
-              <input id="use-score" type="checkbox" class="toggle-checkbox">
-              <span class="toggle-slider"></span>
-              <span class="toggle-text">점수 기록 <span class="hint">(문제당 1점, 상황판 표시)</span></span>
-            </label>
           </div>
 
           <button id="btn-create-room" class="btn btn-primary">게임 준비 시작 ▶</button>
@@ -95,8 +68,8 @@
   <!-- ===== 상황판 뷰 ===== -->
   <div id="view-board" class="view">
 
-    <!-- 상단 50%: 문제 영역 -->
-    <div id="board-top" class="board-top">
+    <!-- 좌 40%: 문제 영역 -->
+    <div id="board-left" class="board-left">
       <div id="board-phase-label" class="board-phase-label">대기 중</div>
       <div id="board-q-info" class="board-q-info"></div>
       <div id="board-q-text" class="board-q-text"></div>
@@ -105,9 +78,9 @@
       <div id="board-countdown" class="board-countdown hidden"></div>
     </div>
 
-    <!-- 하단 50%: 플레이어 패널 -->
-    <div id="board-bottom" class="board-bottom">
-      <div id="board-players" class="board-players"></div>
+    <!-- 우 60%: 카드 그리드 (7×4=28장) -->
+    <div id="board-right" class="board-right">
+      <div id="board-card-grid" class="board-card-grid"></div>
     </div>
 
     <button id="board-mute-btn" class="mute-btn">🔊</button>
@@ -117,13 +90,19 @@
   <!-- ===== 클라이언트 뷰 ===== -->
   <div id="view-client" class="view">
 
-    <!-- 단계 1: 플레이어 선택 -->
+    <!-- 내 누적 점수 (입장 후 항상 표시) -->
+    <div id="cs-score-bar" class="cs-score-bar hidden">
+      <span class="cs-score-label">내 점수</span>
+      <span id="cs-score-value" class="cs-score-value">0점</span>
+    </div>
+
+    <!-- 단계 1: 닉네임 입력 -->
     <div id="cs-player-select" class="client-section active">
       <div class="cs-header">
-        <h2>내 번호를 선택하세요</h2>
+        <h2>닉네임을 입력하세요</h2>
         <p id="cs-room-label" class="room-code-small"></p>
       </div>
-      <div id="cs-player-buttons" class="cs-player-buttons"></div>
+      <div id="cs-player-buttons"></div>
     </div>
 
     <!-- 단계 2: 대기 -->
@@ -205,11 +184,30 @@
       <div id="cq-result" class="cq-result hidden"></div>
     </div>
 
-    <!-- 단계 5: 시상식 -->
+    <!-- 단계 5: 카드 선택 -->
+    <div id="cs-card-select" class="client-section">
+      <div class="card-select-header">
+        <p id="cs-card-msg" class="card-select-msg">카드를 한 장 선택하세요!</p>
+        <p id="cs-card-status" class="card-select-status"></p>
+      </div>
+      <div id="cs-card-grid" class="cs-card-grid"></div>
+
+      <!-- 선택 카드 3초 확대 오버레이 -->
+      <div id="cs-card-reveal" class="cs-card-reveal hidden">
+        <div class="cs-card-reveal-inner">
+          <div id="cs-reveal-type"  class="reveal-type"></div>
+          <div id="cs-reveal-score" class="reveal-score"></div>
+          <div id="cs-reveal-msg"   class="reveal-msg"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 단계 6: 시상식 -->
     <div id="cs-ceremony" class="client-section">
       <div class="ceremony-wrap">
         <div class="ceremony-emoji">🎉</div>
         <p class="ceremony-msg">수고했어요!</p>
+        <div id="cs-ceremony-rankings" class="ceremony-rankings"></div>
       </div>
     </div>
 
@@ -237,9 +235,15 @@
         <button id="btn-next-question"   class="btn btn-secondary btn-large">다음 문제 ▶▶</button>
         <button id="btn-skip-question"   class="btn btn-warning btn-large">건너뛰기 ⏭</button>
         <button id="btn-end-game"        class="btn btn-danger btn-large">게임 끝내기 🏁</button>
+        <button id="btn-flip-all-cards"  class="btn btn-secondary btn-large" disabled>🃏 카드 모두 뒤집기</button>
       </div>
 
       <div id="admin-player-status" class="admin-player-status"></div>
+
+      <div id="admin-card-preview" class="admin-card-preview hidden">
+        <div class="admin-card-preview-title">🃏 이번 라운드 카드 구성 (관리자 전용)</div>
+        <div id="admin-card-list" class="admin-card-list"></div>
+      </div>
     </div>
   </div>
 
@@ -249,7 +253,8 @@
     <div class="ceremony-content">
       <div class="trophy-icon">🏆</div>
       <h2 class="ceremony-title">게임 종료!</h2>
-      <p class="ceremony-sub">모두 수고했어요!</p>
+      <p class="ceremony-sub">최종 순위</p>
+      <div id="ceremony-rankings" class="ceremony-rankings"></div>
     </div>
   </div>
 

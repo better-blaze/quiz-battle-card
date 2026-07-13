@@ -56,6 +56,13 @@ export function playCountdownStart() {
   setTimeout(() => beep(550, 'sine', 0.15, 0.25), 200);
 }
 
+// 카드 뒤집기
+export function playCardFlip() {
+  beep(300, 'triangle', 0.05, 0.25);
+  setTimeout(() => beep(500, 'sine', 0.10, 0.20), 55);
+  setTimeout(() => beep(720, 'sine', 0.08, 0.15), 110);
+}
+
 // 시상식 축포
 export function playCeremony() {
   if (_muted) return;

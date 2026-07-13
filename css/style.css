@@ -157,14 +157,14 @@ body {
 /* =============================================
    상황판 뷰
    ============================================= */
-#view-board { flex-direction: column; }
+#view-board { flex-direction: row; overflow: hidden; }
 
-/* 상단 50% — 문제 */
-.board-top {
-  height: 50%; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; padding: 16px 28px;
-  border-bottom: 2px solid var(--c-border); position: relative;
-  overflow-y: auto;
+/* 좌 40% — 문제 */
+.board-left {
+  width: 40%; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; padding: 16px 20px;
+  border-right: 2px solid var(--c-border); position: relative;
+  overflow-y: auto; flex-shrink: 0;
 }
 .board-phase-label {
   position: absolute; top: 12px; left: 16px;
@@ -218,54 +218,68 @@ body {
 }
 @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
 
-/* 하단 50% — 플레이어 패널 */
-.board-bottom { height: 50%; display: flex; }
-
-.board-players { display: flex; width: 100%; height: 100%; }
-
-.player-panel {
-  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 12px 8px; border-right: 1px solid var(--c-border);
-  transition: background .3s;
-}
-.player-panel:last-child { border-right: none; }
-.player-panel.correct-flash { background: rgba(46,204,113,.18); }
-.player-panel.wrong-flash   { background: rgba(231,76,60,.12); }
-
-.player-score {
-  font-size: clamp(1.1rem, 2.2vw, 1.7rem); font-weight: 900;
-  color: var(--c-gold); letter-spacing: .02em; margin-bottom: 2px;
+/* 우 60% — 카드 그리드 */
+.board-right {
+  flex: 1; display: flex; flex-direction: column;
+  padding: 12px; overflow-y: auto;
 }
 
-.player-name {
-  font-size: clamp(1.6rem, 4vw, 2.8rem); font-weight: 900; margin-bottom: 8px;
+/* 상황판 7×4 카드 그리드 */
+.board-card-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  flex: 1;
+  align-content: start;
 }
-.player-status-dot {
-  width: 10px; height: 10px; border-radius: 50%; margin-bottom: 10px;
-  background: var(--c-red);
-}
-.player-status-dot.connected { background: var(--c-green); }
 
-.player-submit-badge {
-  font-size: clamp(.9rem, 1.6vw, 1.3rem); padding: 5px 14px; border-radius: 20px;
-  background: var(--c-border); color: var(--c-sub); margin-bottom: 8px;
+/* 상황판 카드 (클릭 없음, 표시 전용) */
+.board-game-card {
+  aspect-ratio: 2/3;
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
 }
-.player-submit-badge.submitted { background: var(--c-primary); color: #fff; }
-.player-submit-badge.correct   { background: var(--c-green);   color: #fff; }
-.player-submit-badge.wrong     { background: var(--c-red);     color: #fff; }
 
-.player-rank-badge {
-  font-size: 1.4rem; font-weight: 900; margin-bottom: 6px;
+.board-card-back {
+  width: 100%; height: 100%;
+  background: linear-gradient(135deg, #5c3cf5, #a78bfa);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: clamp(.85rem, 2.2vw, 1.4rem); font-weight: 900;
+  color: rgba(255,255,255,.35);
+  border: 2px solid rgba(255,255,255,.15);
+  user-select: none;
 }
-.rank-1 { color: var(--c-gold); }
-.rank-2 { color: var(--c-silver); }
-.rank-3 { color: var(--c-bronze); }
+/* .risk-back 는 위 game-card-back.risk-back 규칙에서 함께 처리 */
 
-.player-response {
-  font-size: clamp(1rem, 2.2vw, 1.8rem); font-weight: 700; color: var(--c-text);
-  text-align: center; word-break: break-all; max-width: 95%;
-  margin-top: 4px;
+.board-card-front {
+  width: 100%; height: 100%;
+  border-radius: 8px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 3px;
+  border: 2px solid rgba(255,255,255,.25);
+  animation: cardFlipIn .35s ease;
 }
+.board-card-front.card-plus   { background: linear-gradient(160deg, #145c38, #27ae60); }
+.board-card-front.card-minus  { background: linear-gradient(160deg, #5c1a1a, #c0392b); }
+.board-card-front.card-zero   { background: linear-gradient(160deg, #2a2a4a, #4a4a7a); }
+.board-card-front.card-double { background: linear-gradient(160deg, #5c4400, #f39c12); }
+.board-card-front.card-risk   { background: linear-gradient(160deg, #7a0000, #e74c3c); border-color: rgba(255,100,80,.5); }
+
+.bc-score {
+  font-size: clamp(1.4rem, 3vw, 2.6rem);
+  font-weight: 900; line-height: 1; text-align: center;
+  word-break: break-all;
+}
+.bc-nick {
+  font-size: clamp(1rem, 2vw, 1.6rem);
+  color: rgba(255,255,255,.85); text-align: center;
+  margin-top: 4px; word-break: break-all;
+  overflow: hidden; max-width: 100%; line-height: 1.2;
+}
+.board-card-front.card-double .bc-nick { color: rgba(0,0,0,.6); }
 
 /* =============================================
    클라이언트 뷰
@@ -275,22 +289,32 @@ body {
 .client-section { display: none; flex-direction: column; flex: 1; padding: 24px; }
 .client-section.active { display: flex; }
 
-/* 플레이어 선택 */
+/* 내 누적 점수 바 (클라이언트 뷰 — 항상 좌상단 고정) */
+.cs-score-bar {
+  position: fixed; top: 14px; left: 14px; z-index: 200;
+  background: var(--c-card); border: 1px solid var(--c-border);
+  border-radius: 20px; padding: 8px 18px;
+  display: flex; align-items: center; gap: 10px;
+  box-shadow: var(--shadow); pointer-events: none;
+}
+.cs-score-label { font-size: .85rem; color: var(--c-sub); }
+.cs-score-value { font-size: 1.4rem; font-weight: 900; color: var(--c-gold); }
+
+/* 닉네임 입력 */
 .cs-header { text-align: center; margin-bottom: 28px; }
 .cs-header h2 { font-size: 1.5rem; }
 .room-code-small { color: var(--c-sub); margin-top: 6px; font-size: .9rem; }
 
-.cs-player-buttons {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; max-width: 500px; margin: 0 auto;
+.nickname-input-wrap {
+  display: flex; flex-direction: column; gap: 16px;
+  max-width: 400px; width: 100%; margin: 0 auto;
 }
-.cs-player-btn {
-  aspect-ratio: 1; font-size: 2rem; font-weight: 900; border-radius: var(--radius);
-  background: var(--c-card); border: 2px solid var(--c-border);
-  color: var(--c-text); cursor: pointer; transition: all .2s;
-  display: flex; align-items: center; justify-content: center;
+.nickname-input {
+  font-size: 1.3rem; text-align: center; letter-spacing: .05em;
 }
-.cs-player-btn:hover  { border-color: var(--c-primary); background: var(--c-surface); transform: scale(1.05); }
-.cs-player-btn.taken  { opacity: .35; cursor: not-allowed; }
+.nickname-error {
+  color: var(--c-red); font-size: .9rem; text-align: center; min-height: 1.2em;
+}
 
 /* 대기 */
 .wait-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
@@ -484,6 +508,14 @@ body {
 .admin-player-status {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px;
 }
+.admin-player-count {
+  grid-column: 1 / -1;
+  font-size: .9rem; color: var(--c-sub);
+  padding: 6px 2px 2px;
+  border-bottom: 1px solid var(--c-border);
+  margin-bottom: 4px;
+}
+.admin-player-count strong { color: var(--c-text); }
 .admin-player-card {
   background: var(--c-card); border-radius: var(--radius); padding: 14px;
   border: 1px solid var(--c-border); text-align: center;
@@ -494,6 +526,191 @@ body {
 .admin-player-state.submitted  { background: rgba(124,111,247,.25); color: var(--c-primary); }
 .admin-player-state.correct    { background: rgba(46,204,113,.35); color: var(--c-green); }
 .admin-player-state.wrong      { background: rgba(231,76,60,.25); color: var(--c-red); }
+
+/* =============================================
+   카드 선택 뷰 (클라이언트)
+   ============================================= */
+#cs-card-select {
+  padding: 8px;
+  overflow: hidden;
+}
+
+.card-select-header { text-align: center; padding: 4px 0 6px; flex-shrink: 0; }
+.card-select-msg    { font-size: 1.1rem; font-weight: 700; }
+.card-select-status { font-size: .85rem; color: var(--c-red); min-height: 1.2em; margin-top: 2px; }
+
+/* 7 × 4 카드 그리드 — 행·열 모두 고정해 항상 가용 공간에 꼭 맞게 배열 */
+.cs-card-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: repeat(4, 1fr);
+  gap: clamp(3px, 0.8vw, 6px);
+  flex: 1;
+  min-height: 0;   /* flex 자식이 부모 높이를 넘지 않도록 */
+  overflow: hidden;
+}
+
+/* 개별 카드 — aspect-ratio 제거, 그리드 셀이 크기를 결정 */
+.game-card {
+  border-radius: 8px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: transform .15s, box-shadow .15s;
+  -webkit-tap-highlight-color: transparent;
+  min-width: 0;
+  min-height: 0;
+}
+.game-card:not(.flipped):active { transform: scale(.93); }
+.game-card:not(.flipped):hover  { transform: scale(1.07) translateY(-3px);
+  box-shadow: 0 6px 18px rgba(0,0,0,.5); }
+.game-card.flipped { cursor: default; }
+.game-card.watch   { cursor: default; }  /* 구경 모드 */
+
+/* 카드 뒷면 */
+.game-card-back {
+  width: 100%; height: 100%;
+  background: linear-gradient(135deg, #5c3cf5, #a78bfa);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: clamp(.7rem, 2vw, 1.4rem); font-weight: 900;
+  color: rgba(255,255,255,.4);
+  border: 2px solid rgba(255,255,255,.15);
+  user-select: none;
+}
+/* 고위험 카드 뒷면 — 빨간색으로 구분 */
+.game-card-back.risk-back,
+.board-card-back.risk-back {
+  background: linear-gradient(135deg, #7a0000, #e74c3c);
+  border-color: rgba(255,120,100,.3);
+}
+
+/* 카드 앞면 */
+.game-card-front {
+  width: 100%; height: 100%;
+  border-radius: 8px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 3px;
+  border: 2px solid rgba(255,255,255,.25);
+  animation: cardFlipIn .3s ease;
+}
+@keyframes cardFlipIn {
+  0%   { transform: scaleX(0); opacity: 0; }
+  100% { transform: scaleX(1); opacity: 1; }
+}
+
+.game-card-front.card-plus   { background: linear-gradient(160deg, #145c38, #27ae60); }
+.game-card-front.card-minus  { background: linear-gradient(160deg, #5c1a1a, #c0392b); }
+.game-card-front.card-zero   { background: linear-gradient(160deg, #2a2a4a, #4a4a7a); }
+.game-card-front.card-double { background: linear-gradient(160deg, #5c4400, #f39c12); }
+/* 고위험 카드 — 선명한 빨강 (일반 card-minus보다 채도 높음) */
+.game-card-front.card-risk   { background: linear-gradient(160deg, #7a0000, #e74c3c); border-color: rgba(255,100,80,.5); }
+
+.gc-score {
+  font-size: clamp(.5rem, 1.4vw, .95rem);
+  font-weight: 900; line-height: 1.1; text-align: center;
+  word-break: keep-all;
+}
+.gc-taker {
+  font-size: clamp(.32rem, .85vw, .58rem);
+  color: rgba(255,255,255,.7); text-align: center;
+  margin-top: 2px; word-break: break-all;
+  overflow: hidden; max-width: 100%;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.game-card-front.card-double .gc-taker { color: rgba(0,0,0,.6); }
+
+/* 선택 카드 3초 확대 오버레이 */
+.cs-card-reveal {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,.82);
+  display: flex; align-items: center; justify-content: center;
+}
+.cs-card-reveal-inner {
+  background: var(--c-card); border-radius: 20px;
+  padding: 36px 56px; text-align: center;
+  border: 2px solid var(--c-primary);
+  box-shadow: 0 0 60px rgba(124,111,247,.5);
+  animation: bounceIn .35s ease;
+  min-width: 220px;
+}
+.reveal-type  { font-size: .95rem; color: var(--c-sub); margin-bottom: 10px; }
+.reveal-score {
+  font-size: clamp(2.6rem, 9vw, 5rem); font-weight: 900; line-height: 1;
+  margin-bottom: 14px;
+}
+.reveal-score.card-plus   { color: var(--c-green); }
+.reveal-score.card-minus  { color: var(--c-red); }
+.reveal-score.card-zero   { color: var(--c-sub); }
+.reveal-score.card-double { color: var(--c-gold); }
+.reveal-msg { font-size: 1rem; color: var(--c-sub); }
+
+/* =============================================
+   순위 목록 (ceremony-overlay, cs-ceremony, admin)
+   ============================================= */
+.ceremony-rankings {
+  margin-top: 20px;
+  max-height: 48vh; overflow-y: auto;
+  width: 100%; min-width: 280px;
+  scrollbar-width: thin;
+}
+.rank-item {
+  display: flex; align-items: center; gap: 14px;
+  padding: 9px 14px; border-radius: 10px; margin-bottom: 6px;
+  background: rgba(255,255,255,.08); text-align: left;
+}
+.rank-item.rank-mine {
+  background: rgba(124,111,247,.3);
+  border: 1px solid var(--c-primary);
+}
+.rank-medal { font-size: 1.5rem; min-width: 2rem; text-align: center; flex-shrink: 0; }
+.rank-nick  { flex: 1; font-size: 1.1rem; font-weight: 700; word-break: break-all; }
+.rank-score { font-size: 1.2rem; font-weight: 900; flex-shrink: 0; }
+.rank-score.pos  { color: var(--c-green); }
+.rank-score.neg  { color: var(--c-red); }
+.rank-score.zero { color: var(--c-sub); }
+
+/* 관리자 카드 프리뷰 */
+.admin-card-preview {
+  margin-top: 16px; padding-top: 14px;
+  border-top: 1px solid var(--c-border);
+}
+.admin-card-preview-title {
+  font-size: .85rem; font-weight: 700; color: var(--c-gold);
+  margin-bottom: 10px;
+}
+.admin-card-list {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+.acp-card {
+  border-radius: 6px; padding: 6px 3px;
+  text-align: center; cursor: default;
+  border: 1px solid rgba(255,255,255,.08);
+  transition: opacity .3s;
+}
+.acp-card.acp-taken { opacity: .38; }
+.acp-card.card-plus   { background: linear-gradient(160deg, #145c38, #27ae60); }
+.acp-card.card-minus  { background: linear-gradient(160deg, #5c1a1a, #c0392b); }
+.acp-card.card-zero   { background: linear-gradient(160deg, #2a2a4a, #4a4a7a); }
+.acp-card.card-double { background: linear-gradient(160deg, #5c4400, #f39c12); }
+.acp-card.card-risk   { background: linear-gradient(160deg, #7a0000, #e74c3c); }
+.acp-num   { font-size: .58rem; color: rgba(255,255,255,.5); margin-bottom: 1px; }
+.acp-score { font-size: .9rem;  font-weight: 900; color: #fff; line-height: 1.1; }
+.acp-taker {
+  font-size: .55rem; color: rgba(255,255,255,.85);
+  margin-top: 3px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+
+/* 관리자 순위 헤더 */
+.admin-final-header {
+  font-size: 1.2rem; font-weight: 900; margin-bottom: 12px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--c-border);
+  color: var(--c-gold);
+}
 
 /* =============================================
    시상식 오버레이

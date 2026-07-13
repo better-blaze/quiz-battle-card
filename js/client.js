@@ -13,20 +13,41 @@ export function showSection(id) {
   if (el) el.classList.add('active');
 }
 
-// ── 플레이어 선택 화면 ──
-export function renderPlayerSelect({ playerIds, takenIds, onSelect }) {
+// ── 닉네임 입력 화면 ──
+export function renderNicknameInput({ onEnter }) {
   showSection('cs-player-select');
   const wrap = document.getElementById('cs-player-buttons');
   if (!wrap) return;
-  wrap.innerHTML = '';
-  playerIds.forEach(pid => {
-    const btn = document.createElement('button');
-    btn.className   = 'cs-player-btn' + (takenIds.includes(pid) ? ' taken' : '');
-    btn.textContent = pid;
-    btn.disabled    = takenIds.includes(pid);
-    btn.addEventListener('click', () => !btn.disabled && onSelect(pid));
-    wrap.appendChild(btn);
-  });
+  wrap.innerHTML = `
+    <div class="nickname-input-wrap">
+      <input id="cs-nickname-input" class="input-big nickname-input"
+        type="text" maxlength="8" placeholder="닉네임 입력 (최대 8자)"
+        autocomplete="off" autocorrect="off" spellcheck="false">
+      <p id="cs-nickname-error" class="nickname-error hidden"></p>
+      <button id="btn-nickname-enter" class="btn btn-primary btn-large">입장하기</button>
+    </div>`;
+
+  const input = document.getElementById('cs-nickname-input');
+  const btn   = document.getElementById('btn-nickname-enter');
+
+  const submit = () => {
+    const val = input.value.trim();
+    if (!val) return;
+    onEnter(val);
+  };
+
+  btn.addEventListener('click', submit);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+  setTimeout(() => input.focus(), 100);
+}
+
+// 닉네임 오류 메시지 표시 (중복 닉네임 등)
+export function showNicknameError(msg) {
+  const el = document.getElementById('cs-nickname-error');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  setTimeout(() => el.classList.add('hidden'), 3000);
 }
 
 // 방 코드 표시
@@ -559,7 +580,198 @@ function renderOrder(q, onSubmit) {
   };
 }
 
+// =============================================
+// 카드 선택 화면
+// =============================================
+
+let _resolveCardPick = null; // waitForCardPick Promise 해결 함수
+let _cardEls         = {};   // { cardIndex: HTMLElement } 맵
+let _watchOnly       = false; // 구경 모드 (오답자)
+
+// 카드 28장 그리드 초기 렌더링
+// watchOnly=true 이면 클릭 비활성화 (오답자 구경 모드)
+export function initCardGrid(deck, watchOnly = false) {
+  _watchOnly       = watchOnly;
+  _cardEls         = {};
+  _resolveCardPick = null;
+
+  const grid = document.getElementById('cs-card-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  const msgEl = document.getElementById('cs-card-msg');
+  if (msgEl) {
+    msgEl.textContent = watchOnly
+      ? '다른 플레이어가 카드를 고르고 있어요...'
+      : '카드를 한 장 선택하세요!';
+  }
+
+  deck.forEach(card => {
+    const el = _createCardEl(card);
+    _cardEls[card.index] = el;
+    grid.appendChild(el);
+  });
+
+  showSection('cs-card-select');
+}
+
+// 실시간 덱 업데이트 — 다른 플레이어가 뒤집은 카드만 갱신
+export function updateCardGrid(deck) {
+  deck.forEach(card => {
+    const el = _cardEls[card.index];
+    if (!el || el.classList.contains('flipped')) return;
+    if (card.takenBy) _flipCardEl(el, card);
+  });
+}
+
+// 카드 한 장 DOM 생성
+function _createCardEl(card) {
+  const el = document.createElement('div');
+  el.className   = 'game-card' + (_watchOnly ? ' watch' : '');
+  el.dataset.idx = card.index;
+
+  if (card.takenBy) {
+    el.classList.add('flipped');
+    _renderCardFront(el, card);
+  } else {
+    const riskBack = (card.type === 'risk' || card.type === 'double') ? ' risk-back' : '';
+    el.innerHTML = `<div class="game-card-back${riskBack}">?</div>`;
+    if (!_watchOnly) {
+      el.addEventListener('click', () => _onCardClick(card.index, el));
+    }
+  }
+  return el;
+}
+
+// 카드 클릭 처리 — waitForCardPick Promise를 해결
+function _onCardClick(idx, el) {
+  if (el.classList.contains('flipped')) return; // 이미 선택된 카드
+  if (!_resolveCardPick) return;                // 현재 선택 대기 중이 아님
+  const resolve    = _resolveCardPick;
+  _resolveCardPick = null;
+  resolve(idx);
+}
+
+// 카드 뒤집기 애니메이션 + 사운드
+function _flipCardEl(el, card) {
+  el.classList.add('flipped');
+  _renderCardFront(el, card);
+  Sound.playCardFlip();
+}
+
+// 카드 앞면 HTML 렌더링
+function _renderCardFront(el, card) {
+  const colorCls = card.type === 'double' ? 'card-double'
+                 : card.type === 'risk'   ? 'card-risk'
+                 : card.score  > 0        ? 'card-plus'
+                 : card.score  < 0        ? 'card-minus'
+                 :                          'card-zero';
+  const scoreStr = card.type === 'double'  ? '2배'
+                 : card.score  > 0         ? `+${card.score}`
+                 :                           `${card.score}`;
+  el.innerHTML = `
+    <div class="game-card-front ${colorCls}">
+      <div class="gc-score">${scoreStr}</div>
+      <div class="gc-taker">${(card.takenBy && card.takenBy !== '—') ? card.takenBy : ''}</div>
+    </div>`;
+}
+
+// 카드 선택 대기 — 사용자가 카드를 탭할 때까지 Promise 대기
+// isDoubleMode: true면 "2배! 한 장 더" 메시지 표시
+export function waitForCardPick(isDoubleMode) {
+  const msgEl = document.getElementById('cs-card-msg');
+  if (msgEl) {
+    msgEl.textContent = isDoubleMode
+      ? '✨ 2배 카드! 카드를 한 장 더 고르세요!'
+      : '카드를 한 장 선택하세요!';
+  }
+  return new Promise(resolve => { _resolveCardPick = resolve; });
+}
+
+// 카드 선점 실패(충돌) 피드백 — 잠깐 표시 후 자동 제거
+export function showCardClaimFail() {
+  const el = document.getElementById('cs-card-status');
+  if (!el) return;
+  el.textContent = '⚡ 방금 다른 사람이 골랐어요! 다른 카드를 고르세요.';
+  setTimeout(() => { el.textContent = ''; }, 1800);
+}
+
+// 선택된 카드를 크게 3초 공개
+// card: {type, score}, gainedScore: 최종 획득 점수, isDoubleCard: 2배카드 자체인지
+// 반환: 3초 후 resolve되는 Promise
+export function showCardReveal(card, gainedScore, isDoubleCard) {
+  return new Promise(resolve => {
+    const overlay  = document.getElementById('cs-card-reveal');
+    const typeEl   = document.getElementById('cs-reveal-type');
+    const scoreEl  = document.getElementById('cs-reveal-score');
+    const msgEl    = document.getElementById('cs-reveal-msg');
+
+    if (typeEl) {
+      typeEl.textContent = card.type === 'double' ? '🎴 2배 카드!'
+                         : card.type === 'risk'   ? '⚠️ 고위험카드'
+                         :                          '🎴 일반카드';
+    }
+
+    if (scoreEl) {
+      if (card.type === 'double') {
+        scoreEl.textContent = '× 2';
+        scoreEl.className   = 'reveal-score card-double';
+      } else {
+        const sign = gainedScore > 0 ? '+' : '';
+        scoreEl.textContent = `${sign}${gainedScore}점`;
+        scoreEl.className   = `reveal-score ${gainedScore > 0 ? 'card-plus'
+                                             : gainedScore < 0 ? 'card-minus'
+                                             : 'card-zero'}`;
+      }
+    }
+
+    if (msgEl) {
+      msgEl.textContent = isDoubleCard ? '한 장 더 고르세요!' : '';
+    }
+
+    overlay?.classList.remove('hidden');
+    Sound.playCardFlip();
+
+    setTimeout(() => {
+      overlay?.classList.add('hidden');
+      resolve();
+    }, 3000);
+  });
+}
+
+// ── 내 누적 점수 표시 ──
+export function updateMyScore(totalScore) {
+  const bar = document.getElementById('cs-score-bar');
+  const val = document.getElementById('cs-score-value');
+  if (!bar || !val) return;
+  const sign = totalScore > 0 ? '+' : '';
+  val.textContent = `${sign}${totalScore}점`;
+  bar.classList.remove('hidden');
+}
+
+export function hideMyScore() {
+  document.getElementById('cs-score-bar')?.classList.add('hidden');
+}
+
 // ── 시상식 화면 ──
-export function showCeremony() {
+export function showCeremony(rankings = [], myNickname = '') {
   showSection('cs-ceremony');
+  _renderCeremonyRankings(rankings, myNickname);
+}
+
+function _renderCeremonyRankings(rankings, myNickname) {
+  const el = document.getElementById('cs-ceremony-rankings');
+  if (!el) return;
+  const medals = ['🥇', '🥈', '🥉'];
+  el.innerHTML = rankings.map((r, i) => {
+    const sign     = r.totalScore > 0 ? '+' : '';
+    const scoreCls = r.totalScore > 0 ? 'pos' : r.totalScore < 0 ? 'neg' : 'zero';
+    const isMine   = r.nickname === myNickname;
+    return `
+      <div class="rank-item${isMine ? ' rank-mine' : ''}">
+        <span class="rank-medal">${medals[i] ?? (i + 1)}</span>
+        <span class="rank-nick">${r.nickname}${isMine ? ' 👈' : ''}</span>
+        <span class="rank-score ${scoreCls}">${sign}${r.totalScore}점</span>
+      </div>`;
+  }).join('');
 }

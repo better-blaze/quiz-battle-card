@@ -7,27 +7,12 @@ import { parseXlsx } from './data.js';
 export function initSettingView({ onCreateRoom, onJoinStudent, onJoinBoard, onJoinAdmin }) {
   const createCodeInput  = document.getElementById('room-code-input');
   const joinCodeInput    = document.getElementById('join-code-input');
-  const playerCountSel   = document.getElementById('player-count-select');
-  const xlsxInput        = document.getElementById('xlsx-file-input');
-  const xlsxStatus       = document.getElementById('xlsx-status');
-  const btnCreate        = document.getElementById('btn-create-room');
-  const btnStudent       = document.getElementById('btn-join-student');
-  const btnBoard         = document.getElementById('btn-join-board');
-  const btnAdmin         = document.getElementById('btn-join-admin');
-  const useRandomKeysChk = document.getElementById('use-random-keys');
-  const randomKeyDesc    = document.getElementById('random-key-desc');
-  const useScoreChk      = document.getElementById('use-score');
-
-  // 토글 설명 텍스트 실시간 업데이트
-  if (useRandomKeysChk && randomKeyDesc) {
-    const updateDesc = () => {
-      randomKeyDesc.textContent = useRandomKeysChk.checked
-        ? '체크 해제 시 보기를 직접 클릭해서 선택'
-        : '✅ 클릭 모드: 보기 버튼을 눌러서 선택';
-    };
-    useRandomKeysChk.addEventListener('change', updateDesc);
-    updateDesc();
-  }
+  const xlsxInput      = document.getElementById('xlsx-file-input');
+  const xlsxStatus     = document.getElementById('xlsx-status');
+  const btnCreate      = document.getElementById('btn-create-room');
+  const btnStudent     = document.getElementById('btn-join-student');
+  const btnBoard       = document.getElementById('btn-join-board');
+  const btnAdmin       = document.getElementById('btn-join-admin');
 
   let parsedQuestions = null;
 
@@ -60,16 +45,21 @@ export function initSettingView({ onCreateRoom, onJoinStudent, onJoinBoard, onJo
   });
 
   // 방 만들기 (관리자)
-  btnCreate.addEventListener('click', () => {
-    const code          = createCodeInput.value.trim();
-    const playerCount   = parseInt(playerCountSel.value);
-    const useRandomKeys = useRandomKeysChk ? useRandomKeysChk.checked : true;
-    const useScore      = useScoreChk      ? useScoreChk.checked      : false;
+  btnCreate.addEventListener('click', async () => {
+    const code = createCodeInput.value.trim();
 
-    if (code.length !== 4)   { showMsg('방 코드는 4자리로 입력해주세요.', 'error'); return; }
-    if (!parsedQuestions)    { showMsg('먼저 엑셀 파일을 업로드해주세요.', 'error'); return; }
+    if (code.length !== 4) { showMsg('방 코드는 4자리로 입력해주세요.', 'error'); return; }
+    if (!parsedQuestions)  { showMsg('먼저 엑셀 파일을 업로드해주세요.', 'error'); return; }
 
-    onCreateRoom(code, playerCount, parsedQuestions, useRandomKeys, useScore);
+    btnCreate.disabled = true;
+    showMsg('방을 만드는 중...', 'info');
+    try {
+      await onCreateRoom(code, parsedQuestions);
+    } catch (err) {
+      console.error('[방 만들기 오류]', err);
+      showMsg('오류: ' + err.message, 'error');
+      btnCreate.disabled = false;
+    }
   });
 
   // 학생 참여
@@ -83,6 +73,7 @@ export function initSettingView({ onCreateRoom, onJoinStudent, onJoinBoard, onJo
   btnBoard.addEventListener('click', () => {
     const code = joinCodeInput.value.trim();
     if (code.length !== 4) { showMsg('방 코드 4자리를 입력해주세요.', 'error'); return; }
+    if (!checkPassword())  { showMsg('비밀번호가 틀렸습니다.', 'error'); return; }
     onJoinBoard(code);
   });
 
@@ -90,8 +81,14 @@ export function initSettingView({ onCreateRoom, onJoinStudent, onJoinBoard, onJo
   btnAdmin.addEventListener('click', () => {
     const code = joinCodeInput.value.trim();
     if (code.length !== 4) { showMsg('방 코드 4자리를 입력해주세요.', 'error'); return; }
+    if (!checkPassword())  { showMsg('비밀번호가 틀렸습니다.', 'error'); return; }
     onJoinAdmin(code);
   });
+}
+
+function checkPassword() {
+  const pw = prompt('비밀번호를 입력하세요:');
+  return pw === '0257';
 }
 
 function setXlsxStatus(msg, type) {

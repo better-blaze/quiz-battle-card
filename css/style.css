@@ -643,6 +643,17 @@ body {
 .game-card.flipped { cursor: default; }
 .game-card.watch   { cursor: default; }  /* 구경 모드 */
 
+/* 서버 트랜잭션 응답을 기다리는 중인 카드 — 은은하게 깜빡여 "선택 중"임을 표시 */
+.game-card.pending { cursor: wait; }
+.game-card.pending .game-card-back { animation: card-pending-pulse 1s ease-in-out infinite; }
+@keyframes card-pending-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+
+/* 다른 카드의 서버 응답을 기다리는 동안 나머지 카드는 흐리게 표시 + 클릭 잠금(연타 방지) */
+.cs-card-grid.picking .game-card:not(.pending):not(.flipped) {
+  opacity: .45;
+  pointer-events: none;
+}
+
 /* 카드 뒷면 — 등급별 실제 색상은 CARD_CONFIG.colors 기반으로 JS가 inline style로 지정한다 (spec §1-2) */
 .game-card-back {
   width: 100%; height: 100%;

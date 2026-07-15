@@ -588,6 +588,7 @@ function renderOrder(q, onSubmit) {
 let _resolveCardPick = null; // waitForCardPick Promise 해결 함수
 let _cardEls         = {};   // { cardIndex: HTMLElement } 맵
 let _watchOnly       = false; // 구경 모드 (오답자)
+let _pendingCardIdx  = null;  // 서버 트랜잭션 응답을 기다리는 중인 카드 인덱스 (동시 클릭 대응)
 
 // 카드 28장 그리드 초기 렌더링
 // watchOnly=true 이면 클릭 비활성화 (오답자 구경 모드)
@@ -595,6 +596,7 @@ export function initCardGrid(deck, watchOnly = false) {
   _watchOnly       = watchOnly;
   _cardEls         = {};
   _resolveCardPick = null;
+  _pendingCardIdx  = null;
 
   const grid = document.getElementById('cs-card-grid');
   if (!grid) return;
@@ -620,8 +622,13 @@ export function initCardGrid(deck, watchOnly = false) {
 }
 
 // 실시간 덱 업데이트 — 다른 플레이어가 뒤집은 카드만 갱신
+// 내가 트랜잭션 응답을 기다리는 카드(_pendingCardIdx)는 건너뛴다 — Firebase 트랜잭션은
+// 서버에 확정되기 전 낙관적으로 로컬 값을 먼저 반영하므로, 그 값을 그대로 그리면
+// 동시 클릭에서 진 플레이어 화면에도 "내가 고른 것처럼" 잠깐 표시되는 문제가 생긴다.
+// 최종 상태는 claimCard 응답을 받은 뒤 resolveCardPick()이 직접 확정해 그린다.
 export function updateCardGrid(deck) {
   deck.forEach(card => {
+    if (card.index === _pendingCardIdx) return;
     const el = _cardEls[card.index];
     if (!el || el.classList.contains('flipped')) return;
     if (card.takenBy) _flipCardEl(el, card);
@@ -649,11 +656,47 @@ function _createCardEl(card) {
 
 // 카드 클릭 처리 — waitForCardPick Promise를 해결
 function _onCardClick(idx, el) {
-  if (el.classList.contains('flipped')) return; // 이미 선택된 카드
+  if (el.classList.contains('flipped')) return; // 이미 선택(소진)된 카드 — 서버 왕복 전 1차 차단
+  if (_pendingCardIdx !== null) return;         // 다른 카드의 서버 응답을 기다리는 중 — 연타 방지
   if (!_resolveCardPick) return;                // 현재 선택 대기 중이 아님
   const resolve    = _resolveCardPick;
   _resolveCardPick = null;
+  _markPending(idx, el);
   resolve(idx);
+}
+
+// 탭한 카드를 "선택 중..." 상태로 표시하고, 응답이 올 때까지 다른 카드 클릭을 잠근다
+function _markPending(idx, el) {
+  _pendingCardIdx = idx;
+  el.classList.add('pending');
+  const back = el.querySelector('.game-card-back');
+  if (back) back.textContent = '⏳';
+  document.getElementById('cs-card-grid')?.classList.add('picking');
+}
+
+// 대기 상태 해제 — 성공/실패 모두 반드시 호출해 클릭 잠금을 풀어준다
+function _clearPending() {
+  const el = _pendingCardIdx !== null ? _cardEls[_pendingCardIdx] : null;
+  if (el && !el.classList.contains('flipped')) {
+    el.classList.remove('pending');
+    const back = el.querySelector('.game-card-back');
+    if (back) back.textContent = '?';
+  }
+  _pendingCardIdx = null;
+  document.getElementById('cs-card-grid')?.classList.remove('picking');
+}
+
+// 트랜잭션 확정 결과를 그리드에 반영 (성공/실패 공통) — claimCard가 돌려준 서버 확정 데이터를
+// 그대로 사용하므로, 동시 클릭 상황에서도 실제 소유자와 다르게 표시될 일이 없다.
+// silent=true면 카드 뒤집기 효과음을 생략한다(성공 시 카드 리빌 팝업이 별도로 재생하므로 중복 방지).
+export function resolveCardPick(idx, card, silent = false) {
+  const el = _cardEls[idx];
+  _clearPending();
+  if (!el || el.classList.contains('flipped')) return;
+  if (!card || !card.takenBy) return; // 방어적 처리 — 정상 흐름에서는 항상 채워져 있음
+  el.classList.add('flipped');
+  _renderCardFront(el, card);
+  if (!silent) Sound.playCardFlip();
 }
 
 // 카드 뒤집기 애니메이션 + 사운드
@@ -703,7 +746,7 @@ export function cancelCardPick() {
 export function showCardClaimFail() {
   const el = document.getElementById('cs-card-status');
   if (!el) return;
-  el.textContent = '⚡ 방금 다른 사람이 골랐어요! 다른 카드를 고르세요.';
+  el.textContent = '⚡ 이미 다른 친구가 선택한 카드예요. 다른 카드를 골라주세요!';
   setTimeout(() => { el.textContent = ''; }, 1800);
 }
 

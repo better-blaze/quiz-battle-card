@@ -633,6 +633,8 @@ async function submitAnswer(code, qIndex, nickname, { value, displayValue, corre
 
 // ── Firebase 트랜잭션으로 카드 선점 ──
 // takenBy === null 일 때만 닉네임 기록 성공. 동시 탭 충돌은 서버가 직렬화.
+// (트랜잭션 자체는 그대로 — snapshot은 committed 여부와 무관하게 서버가 확정한 최신 카드 상태를
+//  담고 있으므로, 실패했을 때도 함께 돌려줘서 UI가 "실제로 누가 가져갔는지"를 정확히 그릴 수 있게 한다.)
 async function claimCard(code, qi, cardIdx, nickname) {
   try {
     const result = await runTransaction(
@@ -643,11 +645,10 @@ async function claimCard(code, qi, cardIdx, nickname) {
         return { ...current, takenBy: nickname };  // 선점 성공
       }
     );
-    if (result.committed) return { success: true, card: result.snapshot.val() };
-    return { success: false };
+    return { success: result.committed, card: result.snapshot.val() };
   } catch (err) {
     console.error('[카드 트랜잭션 오류]', err);
-    return { success: false };
+    return { success: false, card: null };
   }
 }
 
@@ -684,10 +685,15 @@ async function startCardSelection(code, qi, nickname) {
       const { success, card } = await claimCard(code, qi, cardIdx, nickname);
 
       if (!success) {
+        // 동시 클릭 등으로 선점 실패 — 실제로 확정된 카드(다른 사람 소유)를 그리드에 반영하고
+        // 잠금을 풀어 다른 카드를 다시 고를 수 있게 한다.
+        Client.resolveCardPick(cardIdx, card);
         Client.showCardClaimFail();
         continue;
       }
 
+      // 선점 성공 — 사운드는 뒤이은 카드 리빌 팝업에서 재생하므로 그리드 반영은 무음으로 처리
+      Client.resolveCardPick(cardIdx, card, true);
       pickedCards.push(cardIdx);
 
       if (!isDoubleMode && card.type === 'double') {

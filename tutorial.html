@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>게임 안내 — Quiz Battle Card</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="tutorial-body">
+  <div class="tutorial-wrap">
+    <a href="index.html" class="btn btn-secondary btn-sm tutorial-back">← 돌아가기</a>
+    <h1 class="tutorial-title">📖 게임 안내</h1>
+
+    <!-- 카드 시스템 -->
+    <section class="tutorial-section">
+      <h2>🃏 카드 시스템</h2>
+      <p class="tutorial-desc">
+        28장(7×4)이 매 문제마다 새로 섞여 나와요. 카드 <strong>뒷면 색깔로 등급(위험도)</strong>이 보이고,
+        점수는 뒤집어야 알 수 있어요.
+      </p>
+
+      <table class="tutorial-card-table">
+        <thead>
+          <tr><th>색깔</th><th>등급</th><th>장수</th><th>특징</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="tutorial-swatch" data-tier="normal"></span></td>
+            <td>일반</td>
+            <td>19장</td>
+            <td>안정적인 5~9점</td>
+          </tr>
+          <tr>
+            <td><span class="tutorial-swatch" data-tier="risk"></span></td>
+            <td>위험</td>
+            <td>5장</td>
+            <td>낮은 점수 또는 조금 더 높은 점수</td>
+          </tr>
+          <tr>
+            <td><span class="tutorial-swatch" data-tier="highRisk"></span></td>
+            <td>고위험</td>
+            <td>4장</td>
+            <td>큰 이득 또는 큰 손해</td>
+          </tr>
+          <tr>
+            <td><span class="tutorial-swatch" data-tier="ultra"></span></td>
+            <td>초고위험</td>
+            <td>0~1장</td>
+            <td>아주 큰 이득 또는 아주 큰 손해 + 대폭발</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <ul class="tutorial-list">
+        <li>이미 다른 친구가 고른 카드는 자동으로 뒤집혀서 못 골라요 (선착순).</li>
+        <li>동시에 같은 카드를 눌러도 서버가 한 명만 인정해요 — 진 사람은 "선택 중..." 표시 후 자동으로 다른 카드를 다시 고를 수 있어요.</li>
+      </ul>
+    </section>
+
+    <!-- 점수 규칙 -->
+    <section class="tutorial-section">
+      <h2>🏆 점수 규칙</h2>
+      <ul class="tutorial-list">
+        <li>오답이어도 벌점은 없어요 (카드를 못 고름).</li>
+        <li>마이너스 점수 있음.</li>
+        <li>점수는 게임이 끝날 때 순위와 함께 공개돼요.</li>
+      </ul>
+    </section>
+  </div>
+
+  <script type="module" src="js/tutorial.js"></script>
+</body>
+</html>

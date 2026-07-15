@@ -7,7 +7,7 @@ import { getCardBackColor, getCardTextColor } from './config.js';
 // 방향키 단축키 핸들러 (재진입 시 중복 등록 방지용으로 참조 보관)
 let _adminKeydownHandler = null;
 
-export function initAdminView({ roomCode, onStartCountdown, onNextQuestion, onSkipQuestion, onEndGame, onFlipAllCards, onArmUltraCard, onToggleExplosion }) {
+export function initAdminView({ roomCode, onStartCountdown, onNextQuestion, onSkipQuestion, onEndGame, onFlipAllCards, onArmUltraCard, onToggleExplosion, onToggleScoreVisible }) {
   const roomBadge = document.getElementById('admin-room-badge');
   if (roomBadge) roomBadge.textContent = `방: ${roomCode}`;
 
@@ -21,6 +21,9 @@ export function initAdminView({ roomCode, onStartCountdown, onNextQuestion, onSk
   document.getElementById('btn-arm-ultra')      ?.addEventListener('click', onArmUltraCard);
   document.getElementById('chk-explosion-enabled')?.addEventListener('change', (e) => {
     onToggleExplosion(e.target.checked);
+  });
+  document.getElementById('chk-score-visible')?.addEventListener('change', (e) => {
+    onToggleScoreVisible(e.target.checked);
   });
 
   // ── 방향키 단축키: ↑ = 5초 카운트다운, ↓ = 다음 문제 ──
@@ -93,6 +96,12 @@ export function setUltraArmedState(armed, idle) {
 // '대폭발 포함' 토글 체크박스를 Firebase 상태와 동기화
 export function setExplosionToggle(enabled) {
   const chk = document.getElementById('chk-explosion-enabled');
+  if (chk && chk.checked !== enabled) chk.checked = enabled;
+}
+
+// '개인 점수 공개' 토글 체크박스를 Firebase 상태와 동기화
+export function setScoreVisibleToggle(enabled) {
+  const chk = document.getElementById('chk-score-visible');
   if (chk && chk.checked !== enabled) chk.checked = enabled;
 }
 

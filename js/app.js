@@ -459,7 +459,13 @@ async function enterWithNickname(code, nickname) {
   }
 
   state.myPlayerId = nickname;
-  await set(R.player(code, nickname), { nickname, connected: true, totalScore: 0 });
+  if (pSnap.exists()) {
+    // 기존 플레이어가 재접속하는 경우: 누적 점수는 유지하고 접속 상태만 갱신
+    await update(R.player(code, nickname), { connected: true });
+  } else {
+    // 처음 입장하는 플레이어: 점수 0으로 초기화
+    await set(R.player(code, nickname), { nickname, connected: true, totalScore: 0 });
+  }
   startStudentGameListener(code, nickname);
 }
 

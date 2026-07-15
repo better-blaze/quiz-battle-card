@@ -606,6 +606,9 @@ export function initCardGrid(deck, watchOnly = false) {
       : '카드를 한 장 선택하세요!';
   }
 
+  // 오답자 구경 모드: 카드 선택이 불가능함을 반투명 레이어로 표시
+  document.getElementById('cs-watch-overlay')?.classList.toggle('hidden', !watchOnly);
+
   deck.forEach(card => {
     const el = _createCardEl(card);
     _cardEls[card.index] = el;

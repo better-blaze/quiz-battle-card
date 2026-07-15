@@ -3,6 +3,7 @@
 // =============================================
 
 import * as Sound from './sound.js';
+import { getCardBackColor, getCardTextColor } from './config.js';
 
 // ── 상황판 카드 그리드 ──
 
@@ -24,13 +25,17 @@ export function renderBoardCards(deck) {
       el.classList.add('flipped');
       _renderBoardCardFront(el, card);
     } else {
-      const riskBack = (card.type === 'risk' || card.type === 'double') ? ' risk-back' : '';
-      el.innerHTML = `<div class="board-card-back${riskBack}">?</div>`;
+      _renderBoardCardBack(el, card);
     }
 
     _boardCardEls[card.index] = el;
     grid.appendChild(el);
   });
+}
+
+// 뒷면 렌더링 — 등급별 색상만 노출, 점수는 뒤집기 전까지 절대 보여주지 않음 (spec §1-2)
+function _renderBoardCardBack(el, card) {
+  el.innerHTML = `<div class="board-card-back" style="background:${getCardBackColor(card.type)}">?</div>`;
 }
 
 // 뒤집힌 카드만 업데이트 (실시간 동기화)
@@ -43,8 +48,22 @@ export function updateBoardCards(deck) {
       el.classList.add('flipped');
       _renderBoardCardFront(el, card);
       Sound.playCardFlip();
+      if (card.type === 'explosion') showExplosionEffect();
     }
   });
+}
+
+// 대폭발 발동 연출 — 효과음 + 화면 전체 플래시/흔들림. 점수는 절대 표시하지 않는다 (spec §1-2, §2-4)
+export function showExplosionEffect() {
+  const overlay = document.getElementById('board-explosion-overlay');
+  if (!overlay) return;
+  Sound.playExplosion();
+  overlay.classList.remove('hidden');
+  overlay.classList.add('explosion-active');
+  setTimeout(() => {
+    overlay.classList.remove('explosion-active');
+    overlay.classList.add('hidden');
+  }, 5000);
 }
 
 export function clearBoardCards() {
@@ -53,17 +72,17 @@ export function clearBoardCards() {
   _boardCardEls = {};
 }
 
+// 앞면 색상도 뒷면과 동일하게 등급(CARD_CONFIG.colors) 기준으로 통일한다
 function _renderBoardCardFront(el, card) {
-  const colorCls = card.type === 'double' ? 'card-double'
-                 : card.type === 'risk'   ? 'card-risk'
-                 : card.score >  0        ? 'card-plus'
-                 : card.score <  0        ? 'card-minus'
-                 :                          'card-zero';
-  const scoreStr = card.type === 'double' ? '×2'
-                 : card.score >  0        ? `+${card.score}`
-                 :                          `${card.score}`;
+  const bg = getCardBackColor(card.type);
+  const fg = getCardTextColor(card.type);
+  // 대폭발은 spec §1-2에 따라 점수를 공개하지 않고 발동 연출만 표시
+  const scoreStr = card.type === 'double'    ? '×2'
+                 : card.type === 'explosion' ? '💥'
+                 : card.score >  0           ? `+${card.score}`
+                 :                             `${card.score}`;
   el.innerHTML = `
-    <div class="board-card-front ${colorCls}">
+    <div class="board-card-front" style="background:${bg};color:${fg}">
       <div class="bc-score">${scoreStr}</div>
       <div class="bc-nick">${card.takenBy === '—' ? '' : card.takenBy}</div>
     </div>`;

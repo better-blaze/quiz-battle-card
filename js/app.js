@@ -37,6 +37,7 @@ const R = {
   answer:    (c, qi, p)   => ref(db, `rooms/${c}/answers/${qi}/${p}`),
   deck:      (c, qi)      => ref(db, `rooms/${c}/cards/${qi}/deck`),
   cardSlot:  (c, qi, idx) => ref(db, `rooms/${c}/cards/${qi}/deck/${idx}`),
+  cardMeta:  (c, qi)      => ref(db, `rooms/${c}/cards/${qi}`),
 };
 
 // ── 전역 상태 ──
@@ -51,6 +52,7 @@ let state = {
 // ── 게임 내 임시 상태 ──
 let _currentQIdx         = -1;   // 중복 렌더 방지
 let _cardSelectionActive = false; // 카드 선택 진행 중
+let _cardSelectionQIdx   = -1;    // 카드 선택 중인 문제 인덱스 (다음 문제로 넘어갔는지 판별용)
 let _watchUnsub          = null;  // 오답자 구경 리스너
 let _boardDeckUnsub      = null;  // board 덱 구독 해제 함수
 let _boardCardsReady     = false; // board 카드 최초 렌더 완료 여부
@@ -117,7 +119,9 @@ async function handleCreateRoom(code, questions) {
       currentQuestion:  0,
       phase:            PHASE.IDLE,
       countdownStartAt: null,
-      questionStartAt:  null
+      questionStartAt:  null,
+      ultraArmed:       false,  // 관리자가 '초고위험카드'를 예약했는지 (1회성, spec §2-1-1)
+      explosionEnabled: true    // 초고위험카드 점수 풀에 대폭발 포함 여부 (spec §2-1-2)
     }
   });
 
@@ -241,12 +245,14 @@ function enterAdmin(code) {
   showView('view-admin');
 
   Admin.initAdminView({
-    roomCode:         code,
-    onStartCountdown: () => startCountdown(code),
-    onNextQuestion:   () => nextQuestion(code, false),
-    onSkipQuestion:   () => nextQuestion(code, true),
-    onEndGame:        () => endGame(code),
-    onFlipAllCards:   () => flipAllCards(code),
+    roomCode:          code,
+    onStartCountdown:  () => startCountdown(code),
+    onNextQuestion:    () => nextQuestion(code, false),
+    onSkipQuestion:    () => nextQuestion(code, true),
+    onEndGame:         () => endGame(code),
+    onFlipAllCards:    () => flipAllCards(code),
+    onArmUltraCard:    () => armUltraCard(code),
+    onToggleExplosion: (enabled) => setExplosionEnabled(code, enabled),
   });
 
   // 게임 상태 변화 → 문제 미리보기 + 플레이어 현황 갱신
@@ -257,6 +263,8 @@ function enterAdmin(code) {
     const q    = state.questions[qi];
     if (q) Admin.updateQuestionPreview(q, qi, state.questions.length);
     Admin.setCountdownEnabled(game.phase === PHASE.IDLE);
+    Admin.setUltraArmedState(!!game.ultraArmed, game.phase === PHASE.IDLE);
+    Admin.setExplosionToggle(game.explosionEnabled !== false);
     Admin.setFlipAllEnabled(
       game.phase === PHASE.COUNTDOWN ||
       game.phase === PHASE.ANSWERING ||
@@ -352,16 +360,25 @@ async function startCountdown(code) {
 
   const qi = game.currentQuestion;
 
+  // 초고위험 모드 여부 확정 (카운트다운 시작 시점의 스냅샷을 사용, spec §2-1-1)
+  const ultraMode        = !!game.ultraArmed;
+  const explosionEnabled = game.explosionEnabled !== false; // 명시적 false만 제외 취급
+
   // 카드 28장 생성 → Firebase cards/{qi}/deck 에 저장 (spec §2-1)
-  const deck    = generateDeck(CARD_CONFIG);
+  const deck    = generateDeck(CARD_CONFIG, ultraMode, explosionEnabled);
   const deckObj = {};
   deck.forEach((card, idx) => { deckObj[idx] = { ...card, takenBy: null }; });
   await set(R.deck(code, qi), deckObj);
+  await update(R.cardMeta(code, qi), { ultraMode, explosionTriggeredBy: null });
 
-  await update(R.gameState(code), {
+  const gameStateUpdates = {
     phase:            PHASE.COUNTDOWN,
     countdownStartAt: serverTimestamp()
-  });
+  };
+  // ultraArmed는 1회성 — 이번 배분에 반영한 즉시 자동 리셋 (spec §2-1-1)
+  if (game.ultraArmed) gameStateUpdates.ultraArmed = false;
+
+  await update(R.gameState(code), gameStateUpdates);
 
   setTimeout(async () => {
     const fresh = await get(R.gameState(code));
@@ -389,7 +406,8 @@ async function nextQuestion(code, skip = false) {
     currentQuestion:  nextIdx,
     phase:            PHASE.IDLE,
     countdownStartAt: null,
-    questionStartAt:  null
+    questionStartAt:  null,
+    ultraArmed:       false  // 1회성 예약이 다음 문제로 넘어가며 방치되지 않도록 방어적 리셋
   });
 }
 
@@ -430,6 +448,36 @@ async function flipAllCards(code) {
   if (Object.keys(updates).length > 0) {
     await update(ref(db, '/'), updates);
   }
+}
+
+// ── 초고위험카드 예약 (관리자, 1회성) ──
+// 카운트다운 시작 전(IDLE)에만 예약 가능. 실제 배분/리셋은 startCountdown에서 처리 (spec §2-1-1)
+async function armUltraCard(code) {
+  const gsSnap = await get(R.gameState(code));
+  if (!gsSnap.exists()) return;
+  if (gsSnap.val().phase !== PHASE.IDLE) return;
+  await update(R.gameState(code), { ultraArmed: true });
+}
+
+// ── '대폭발 포함' 토글 (관리자) ──
+async function setExplosionEnabled(code, enabled) {
+  await update(R.gameState(code), { explosionEnabled: enabled });
+}
+
+// ── 대폭발 발동: 모든 플레이어 totalScore를 0으로 초기화 (뽑은 본인 포함, spec §2-4) ──
+// 기존 recordCardResult와 동일하게 플레이어별 runTransaction으로 처리
+async function triggerExplosion(code, qi, nickname) {
+  const playersSnap = await get(R.players(code));
+  if (playersSnap.exists()) {
+    const resets = Object.keys(playersSnap.val()).map(pid =>
+      runTransaction(R.player(code, pid), (current) => {
+        if (!current) return current;
+        return { ...current, totalScore: 0 };
+      })
+    );
+    await Promise.all(resets);
+  }
+  await update(R.cardMeta(code, qi), { explosionTriggeredBy: nickname });
 }
 
 // =============================================
@@ -496,7 +544,14 @@ function startStudentGameListener(code, nickname) {
 }
 
 async function handleStudentGameUpdate(code, nickname, game) {
-  if (_cardSelectionActive) return; // 카드 선택 중에는 상태 변화 무시
+  if (_cardSelectionActive) {
+    // 카드를 아직 안 골랐는데 관리자가 다음 문제로 넘어간 경우 대기 중인 카드 선택을 취소
+    // (그 외 상태 변화는 카드 선택이 끝날 때까지 무시)
+    if (game.phase === PHASE.IDLE || game.currentQuestion !== _cardSelectionQIdx) {
+      Client.cancelCardPick();
+    }
+    return;
+  }
 
   const qi = game.currentQuestion;
 
@@ -599,11 +654,14 @@ async function claimCard(code, qi, cardIdx, nickname) {
 // ── 정답자 카드 선택 흐름 ──
 async function startCardSelection(code, qi, nickname) {
   _cardSelectionActive = true;
+  _cardSelectionQIdx   = qi;
 
   // 실시간 덱 구독 → 다른 플레이어 픽이 내 화면에도 즉시 반영
   const deckUnsub = onValue(R.deck(code, qi), snap => {
     if (snap.exists()) Client.updateCardGrid(deckToArray(snap.val()));
   });
+
+  let cancelled = false;
 
   try {
     const deckSnap = await get(R.deck(code, qi));
@@ -617,6 +675,12 @@ async function startCardSelection(code, qi, nickname) {
 
     while (true) {
       const cardIdx = await Client.waitForCardPick(isDoubleMode);
+      if (cardIdx === null) {
+        // 관리자가 다음 문제로 넘어가 카드 선택이 취소됨 — 지금까지 고른 카드만 기록하고 종료
+        cancelled = true;
+        break;
+      }
+
       const { success, card } = await claimCard(code, qi, cardIdx, nickname);
 
       if (!success) {
@@ -633,18 +697,33 @@ async function startCardSelection(code, qi, nickname) {
         continue;
       }
 
-      // 일반/고위험 또는 2배 이후 두 번째 카드 — 부호 무관 2배 적용
+      if (card.type === 'explosion') {
+        // 대폭발 — 2배 여부와 무관하게 발동. 뽑은 사람의 획득 점수는 0으로 기록 (spec §2-3, §2-4)
+        gainedScore = 0;
+        await Client.showCardReveal(card, 0, false);
+        await triggerExplosion(code, qi, nickname);
+        break;
+      }
+
+      // 일반/위험/고위험/초고위험(숫자) 또는 2배 이후 두 번째 카드 — 부호 무관 2배 적용
       gainedScore = isDoubleMode ? card.score * 2 : card.score;
       await Client.showCardReveal(card, gainedScore, false);
       break;
     }
 
     await recordCardResult(code, qi, nickname, pickedCards, gainedScore);
-    Client.showWaiting('관리자가 다음 문제로 넘길 때까지 기다려주세요...');
+    if (!cancelled) Client.showWaiting('관리자가 다음 문제로 넘길 때까지 기다려주세요...');
 
   } finally {
     deckUnsub();
     _cardSelectionActive = false;
+    _cardSelectionQIdx   = -1;
+  }
+
+  if (cancelled) {
+    // 이미 다음 문제로 넘어간 최신 게임 상태를 다시 반영해 화면을 복구
+    const fresh = await get(R.gameState(code));
+    if (fresh.exists()) await handleStudentGameUpdate(code, nickname, fresh.val());
   }
 }
 
@@ -671,27 +750,52 @@ async function recordCardResult(code, qi, nickname, pickedCards, gainedScore) {
 
 // ── 카드 배분 로직 ──
 
-function generateDeck(config) {
+// ultraMode: 관리자가 '초고위험카드'를 예약한 문제인지 여부 (spec §2-1, §2-1-3)
+// explosionEnabled: 관리자의 '대폭발 포함' 토글 값 (gameState 기준, 기본값은 config 설정값)
+function generateDeck(config, ultraMode = false, explosionEnabled = config.explosionEnabled) {
   const cards = [];
 
-  const normalPool = buildWeightedPool(config.normal);
-  for (let i = 0; i < config.normalCount; i++) {
+  // 일반카드 (노랑)
+  const normalPool = buildWeightedPool(config.tiers.normal);
+  for (let i = 0; i < config.counts.normal; i++) {
     cards.push({ type: 'normal', score: pickWeighted(normalPool) });
   }
 
-  const doubleEntry  = config.risk.find(r => r.score === 'double');
-  const doubleMax    = doubleEntry?.max ?? 1;
-  const riskFullPool = buildWeightedPool(config.risk);
-  const riskNoDouble = buildWeightedPool(config.risk.filter(r => r.score !== 'double'));
+  // 위험카드 (주황)
+  const riskPool = buildWeightedPool(config.tiers.risk);
+  for (let i = 0; i < config.counts.risk; i++) {
+    cards.push({ type: 'risk', score: pickWeighted(riskPool) });
+  }
+
+  // 고위험카드 (빨강) — 초고위험 모드에서는 1장 줄어듦(3장), score:"double"은 세트당 max 장수 제한
+  const highRiskCount        = ultraMode ? config.counts.highRisk - 1 : config.counts.highRisk;
+  const doubleEntry          = config.tiers.highRisk.find(e => e.score === 'double');
+  const doubleMax            = doubleEntry?.max ?? 1;
+  const highRiskFullPool     = buildWeightedPool(config.tiers.highRisk);
+  const highRiskNoDoublePool = buildWeightedPool(config.tiers.highRisk.filter(e => e.score !== 'double'));
   let doubleCount = 0;
 
-  for (let i = 0; i < config.riskCount; i++) {
-    const picked = pickWeighted(doubleCount < doubleMax ? riskFullPool : riskNoDouble);
+  for (let i = 0; i < highRiskCount; i++) {
+    const picked = pickWeighted(doubleCount < doubleMax ? highRiskFullPool : highRiskNoDoublePool);
     if (picked === 'double') {
       doubleCount++;
       cards.push({ type: 'double', score: 0 }); // 2배카드 자체 점수 0
     } else {
-      cards.push({ type: 'risk', score: picked });
+      cards.push({ type: 'highRisk', score: picked });
+    }
+  }
+
+  // 초고위험카드 (검정) — 초고위험 모드일 때만 1장 추가
+  if (ultraMode) {
+    const ultraEntries = explosionEnabled
+      ? config.tiers.ultra
+      : config.tiers.ultra.filter(e => e.score !== 'explosion');
+    const ultraPool = buildWeightedPool(ultraEntries);
+    const picked    = pickWeighted(ultraPool);
+    if (picked === 'explosion') {
+      cards.push({ type: 'explosion', score: 0 }); // 대폭발: 점수 대신 전원 초기화 효과(spec §2-4)
+    } else {
+      cards.push({ type: 'ultra', score: picked });
     }
   }
 

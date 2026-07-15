@@ -63,6 +63,14 @@ export function playCardFlip() {
   setTimeout(() => beep(720, 'sine', 0.08, 0.15), 110);
 }
 
+// 대폭발 발동 (낮은 굉음 + 급격한 하강)
+export function playExplosion() {
+  if (_muted) return;
+  beep(120, 'sawtooth', 0.5, 0.45);
+  setTimeout(() => beep(80,  'sawtooth', 0.6, 0.4), 80);
+  setTimeout(() => beep(50,  'square',   0.7, 0.35), 180);
+}
+
 // 시상식 축포
 export function playCeremony() {
   if (_muted) return;

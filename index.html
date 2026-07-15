@@ -85,6 +85,12 @@
 
     <button id="board-mute-btn" class="mute-btn">🔊</button>
     <div id="board-room-code" class="room-code-display"></div>
+
+    <!-- 대폭발 발동 연출 (점수는 표시하지 않음, spec §1-2/§2-4) -->
+    <div id="board-explosion-overlay" class="board-explosion-overlay hidden">
+      <div class="explosion-emoji">💥</div>
+      <div class="explosion-text">대폭발 발생!</div>
+    </div>
   </div>
 
   <!-- ===== 클라이언트 뷰 ===== -->
@@ -240,6 +246,15 @@
         <button id="btn-skip-question"   class="btn btn-warning btn-large">건너뛰기 ⏭</button>
         <button id="btn-end-game"        class="btn btn-danger btn-large">게임 끝내기 🏁</button>
         <button id="btn-flip-all-cards"  class="btn btn-secondary btn-large" disabled>🃏 카드 모두 뒤집기</button>
+        <button id="btn-arm-ultra"       class="btn btn-danger btn-large">☠️ 초고위험카드</button>
+      </div>
+
+      <div class="form-row admin-explosion-toggle">
+        <label class="toggle-label">
+          <input type="checkbox" id="chk-explosion-enabled" class="toggle-checkbox" checked>
+          <span class="toggle-slider"></span>
+          <span class="toggle-text">💥 대폭발 포함</span>
+        </label>
       </div>
 
       <div id="admin-player-status" class="admin-player-status"></div>

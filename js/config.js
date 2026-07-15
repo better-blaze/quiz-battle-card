@@ -36,28 +36,91 @@ export const PHASE = {
   ENDED:     'ended'       // 게임 종료
 };
 
-// 카드 배분 설정 — 점수 범위·확률을 바꿀 때 이 객체만 수정하면 됨
+// 카드 배분 설정 — 점수 범위·확률·장수를 바꿀 때 이 객체만 수정하면 됨 (spec §2-1-3)
+// 등급: normal(일반,노랑) / risk(위험,주황) / highRisk(고위험,빨강) / ultra(초고위험,검정)
 export const CARD_CONFIG = {
-  normalCount: 21,   // 일반카드 장수
-  riskCount:   7,    // 고위험카드 장수 (2배카드 포함)
+  // 등급별 장수 (평상시). ultra 모드에서는 highRisk가 1장 줄고 ultra가 1장 추가됨
+  counts: {
+    normal:   19,  // 노란색
+    risk:     5,   // 주황색
+    highRisk: 4,   // 빨간색 (초고위험 모드에서는 3장으로 줄고 ultra 1장 추가)
+  },
 
-  // 일반카드: 점수별 가중치(등장 확률). 가중치 합 대비 비율로 뽑음
-  normal: [
-    { score: 5,  weight: 3 },
-    { score: 6,  weight: 3 },
-    { score: 7,  weight: 2 },
-    { score: 8,  weight: 2 },
-    { score: 9,  weight: 1 },
-    { score: 10, weight: 1 },
-  ],
+  // 등급별 색상 (UI에서 참조)
+  colors: {
+    normal:   '#FFD700',  // 노란색
+    risk:     '#FF8C00',  // 주황색
+    highRisk: '#DC143C',  // 빨간색
+    ultra:    '#1A1A1A',  // 검정색
+  },
 
-  // 고위험카드: 점수별 가중치. score: "double" 은 '다음카드 2배' 특수 카드
-  risk: [
-    { score: -20,      weight: 1 },
-    { score: -10,      weight: 2 },
-    { score: 0,        weight: 1 },
-    { score: 10,       weight: 2 },
-    { score: 20,       weight: 1 },
-    { score: 'double', weight: 1, max: 1 },  // 세트당 최대 1장
-  ],
+  // 등급별 점수 풀과 가중치. score: "double"/"explosion" 은 문자열 특수 카드
+  tiers: {
+    normal: [
+      { score: 5, weight: 1 },
+      { score: 6, weight: 1 },
+      { score: 7, weight: 1 },
+      { score: 8, weight: 1 },
+      { score: 9, weight: 1 },
+    ],
+    risk: [
+      { score: 0,  weight: 1 },
+      { score: 1,  weight: 1 },
+      { score: 2,  weight: 1 },
+      { score: 3,  weight: 1 },
+      { score: 9,  weight: 1 },
+      { score: 10, weight: 1 },
+      { score: 11, weight: 1 },
+    ],
+    highRisk: [
+      { score: -20,      weight: 1 },
+      { score: -15,      weight: 1 },
+      { score: -10,      weight: 1 },
+      { score: -5,       weight: 1 },
+      { score: 0,        weight: 1 },
+      { score: 10,       weight: 1 },
+      { score: 20,       weight: 1 },
+      { score: 'double', weight: 1, max: 1 },  // 세트당 최대 1장
+    ],
+    ultra: [
+      { score: -40,        weight: 1 },
+      { score: -35,        weight: 1 },
+      { score: -30,        weight: 1 },
+      { score: -25,        weight: 1 },
+      { score: -20,        weight: 1 },
+      { score: 25,         weight: 1 },
+      { score: 30,         weight: 1 },
+      { score: 40,         weight: 1 },
+      { score: 'explosion', weight: 1 },  // 대폭발: explosionEnabled가 false면 제외
+    ],
+  },
+
+  explosionEnabled: true,  // 관리자가 대폭발 포함 여부를 켜고 끔
 };
+
+// 카드 type → 색상 등급 매핑. double/explosion은 각각 highRisk/ultra 풀에서 뽑힌
+// 특수 카드이므로(spec §2-1-3), 뒷면 색은 원래 등급(빨강/검정)을 그대로 따른다.
+const CARD_TYPE_TIER = {
+  normal:    'normal',
+  risk:      'risk',
+  highRisk:  'highRisk',
+  double:    'highRisk',
+  ultra:     'ultra',
+  explosion: 'ultra',
+};
+
+// 카드 뒷면 색상 조회 (spec §1-2) — 색상값은 항상 CARD_CONFIG.colors에서만 가져온다.
+export function getCardBackColor(type) {
+  return CARD_CONFIG.colors[CARD_TYPE_TIER[type]] || CARD_CONFIG.colors.normal;
+}
+
+// 등급 배경 위에서 읽기 쉬운 글자색 (밝은 노랑/주황엔 어두운 글자, 어두운 빨강/검정엔 흰 글자)
+const CARD_TIER_TEXT = {
+  normal:   '#1A1A1A',
+  risk:     '#1A1A1A',
+  highRisk: '#FFFFFF',
+  ultra:    '#FFFFFF',
+};
+export function getCardTextColor(type) {
+  return CARD_TIER_TEXT[CARD_TYPE_TIER[type]] || '#FFFFFF';
+}

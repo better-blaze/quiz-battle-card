@@ -5,6 +5,7 @@
 import * as Sound from './sound.js';
 import { checkShortAnswer, checkMultipleChoice, checkMatching,
          checkMultiAnswer, checkOrder } from './quiz.js';
+import { getCardBackColor, getCardTextColor } from './config.js';
 
 // 클라이언트 단계 전환
 export function showSection(id) {
@@ -637,8 +638,8 @@ function _createCardEl(card) {
     el.classList.add('flipped');
     _renderCardFront(el, card);
   } else {
-    const riskBack = (card.type === 'risk' || card.type === 'double') ? ' risk-back' : '';
-    el.innerHTML = `<div class="game-card-back${riskBack}">?</div>`;
+    // 뒷면은 등급별 색상만 노출, 점수는 뒤집기 전까지 절대 보여주지 않음 (spec §1-2)
+    el.innerHTML = `<div class="game-card-back" style="background:${getCardBackColor(card.type)}">?</div>`;
     if (!_watchOnly) {
       el.addEventListener('click', () => _onCardClick(card.index, el));
     }
@@ -662,18 +663,17 @@ function _flipCardEl(el, card) {
   Sound.playCardFlip();
 }
 
-// 카드 앞면 HTML 렌더링
+// 카드 앞면 HTML 렌더링 — 배경/글자색은 뒷면과 동일하게 등급(CARD_CONFIG.colors) 기준으로 통일한다
 function _renderCardFront(el, card) {
-  const colorCls = card.type === 'double' ? 'card-double'
-                 : card.type === 'risk'   ? 'card-risk'
-                 : card.score  > 0        ? 'card-plus'
-                 : card.score  < 0        ? 'card-minus'
-                 :                          'card-zero';
-  const scoreStr = card.type === 'double'  ? '2배'
-                 : card.score  > 0         ? `+${card.score}`
-                 :                           `${card.score}`;
+  const bg = getCardBackColor(card.type);
+  const fg = getCardTextColor(card.type);
+  // 대폭발은 spec §1-2에 따라 점수를 공개하지 않음
+  const scoreStr = card.type === 'double'    ? '2배'
+                 : card.type === 'explosion' ? '💥'
+                 : card.score  > 0           ? `+${card.score}`
+                 :                             `${card.score}`;
   el.innerHTML = `
-    <div class="game-card-front ${colorCls}">
+    <div class="game-card-front" style="background:${bg};color:${fg}">
       <div class="gc-score">${scoreStr}</div>
       <div class="gc-taker">${(card.takenBy && card.takenBy !== '—') ? card.takenBy : ''}</div>
     </div>`;
@@ -689,6 +689,14 @@ export function waitForCardPick(isDoubleMode) {
       : '카드를 한 장 선택하세요!';
   }
   return new Promise(resolve => { _resolveCardPick = resolve; });
+}
+
+// 관리자가 다음 문제로 넘어가 카드 선택이 취소됨 — 대기 중인 Promise를 null로 해결해 루프를 빠져나가게 함
+export function cancelCardPick() {
+  if (!_resolveCardPick) return;
+  const resolve    = _resolveCardPick;
+  _resolveCardPick = null;
+  resolve(null);
 }
 
 // 카드 선점 실패(충돌) 피드백 — 잠깐 표시 후 자동 제거
@@ -710,15 +718,22 @@ export function showCardReveal(card, gainedScore, isDoubleCard) {
     const msgEl    = document.getElementById('cs-reveal-msg');
 
     if (typeEl) {
-      typeEl.textContent = card.type === 'double' ? '🎴 2배 카드!'
-                         : card.type === 'risk'   ? '⚠️ 고위험카드'
-                         :                          '🎴 일반카드';
+      typeEl.textContent = card.type === 'double'    ? '🎴 2배 카드!'
+                         : card.type === 'explosion' ? '💥 대폭발!'
+                         : card.type === 'ultra'     ? '☠️ 초고위험카드'
+                         : card.type === 'highRisk'  ? '🔥 고위험카드'
+                         : card.type === 'risk'      ? '⚠️ 고위험카드'
+                         :                              '🎴 일반카드';
     }
 
     if (scoreEl) {
       if (card.type === 'double') {
         scoreEl.textContent = '× 2';
         scoreEl.className   = 'reveal-score card-double';
+      } else if (card.type === 'explosion') {
+        // 대폭발: 모든 플레이어 점수가 0으로 초기화되므로 숫자 대신 발동 연출만 표시 (spec §2-4)
+        scoreEl.textContent = '전원 점수 초기화!';
+        scoreEl.className   = 'reveal-score card-minus';
       } else {
         const sign = gainedScore > 0 ? '+' : '';
         scoreEl.textContent = `${sign}${gainedScore}점`;
@@ -733,12 +748,27 @@ export function showCardReveal(card, gainedScore, isDoubleCard) {
     }
 
     overlay?.classList.remove('hidden');
-    Sound.playCardFlip();
+    if (card.type === 'explosion') {
+      overlay?.classList.add('explosion-active');
+      Sound.playExplosion();
+    } else {
+      Sound.playCardFlip();
+    }
 
-    setTimeout(() => {
+    // 3초 자동 종료 또는 화면 클릭 시 즉시 종료 — 둘 중 먼저 발생하는 쪽으로 한 번만 닫음
+    let closed = false;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      clearTimeout(timer);
+      overlay?.removeEventListener('click', close);
       overlay?.classList.add('hidden');
+      overlay?.classList.remove('explosion-active');
       resolve();
-    }, 3000);
+    };
+
+    const timer = setTimeout(close, 3000);
+    overlay?.addEventListener('click', close);
   });
 }
 

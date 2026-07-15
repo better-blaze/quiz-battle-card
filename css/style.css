@@ -19,6 +19,18 @@
   --c-bronze:   #e67e22;
   --radius:     14px;
   --shadow:     0 4px 20px rgba(0,0,0,0.4);
+
+  /* 상황판 카드판(우측 60%) 레이아웃 — 나중에 조정하기 쉽도록 변수로 분리 */
+  --board-pad-x:     28px;   /* 카드판 좌우 여백 */
+  --board-pad-y:     22px;   /* 카드판 상하 여백 */
+  --board-card-gap:  10px;   /* 카드 사이 간격 */
+  --board-card-ratio: 1.6;   /* 카드 세로:가로 비율 (aspect-ratio: 1 / 이값) */
+  --board-cols: 7;
+  --board-rows: 4;
+
+  /* 클라이언트 카드 선택 화면 — board 카드판과 동일한 비율, 여백은 board의 2배 */
+  --cs-card-pad-x: calc(var(--board-pad-x) * 2);
+  --cs-card-pad-y: calc(var(--board-pad-y) * 2);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -54,6 +66,17 @@ body {
 .btn-warning  { background: var(--c-orange);  color: #fff; }
 .btn-large    { font-size: 1.15rem; padding: 16px 32px; }
 .btn-sm       { font-size: .85rem; padding: 8px 14px; }
+
+/* 초고위험카드 예약(armed) 상태 강조 */
+.btn.ultra-armed {
+  background: #1A1A1A; color: #fff;
+  box-shadow: 0 0 0 3px var(--c-red);
+  animation: ultra-pulse 1s infinite;
+}
+@keyframes ultra-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .7; }
+}
 
 /* ── 공통 입력 ── */
 .input-big, .select-big {
@@ -218,32 +241,61 @@ body {
 }
 @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
 
-/* 우 60% — 카드 그리드 */
-.board-right {
-  flex: 1; display: flex; flex-direction: column;
-  padding: 12px; overflow-y: auto;
+/* 대폭발 발동 연출 — 화면 전체 플래시 + 흔들림, 점수는 표시하지 않음 (spec §1-2, §2-4) */
+.board-explosion-overlay {
+  position: fixed; inset: 0; z-index: 600;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.75);
+}
+.explosion-emoji { font-size: clamp(4rem, 12vw, 9rem); }
+.explosion-text  {
+  font-size: clamp(1.4rem, 4vw, 2.6rem); font-weight: 900; color: #fff; margin-top: 12px;
+}
+.board-explosion-overlay.explosion-active { animation: explosionFlash 1.6s ease; }
+.board-explosion-overlay.explosion-active .explosion-emoji { animation: shake .5s ease 3; }
+@keyframes explosionFlash {
+  0%   { background: rgba(255,255,255,.95); }
+  15%  { background: rgba(0,0,0,.75); }
+  100% { background: rgba(0,0,0,.75); }
 }
 
-/* 상황판 7×4 카드 그리드 */
+/* 우 60% — 카드 그리드
+   컨테이너 크기가 바뀌어도 카드 비율(1 : var(--board-card-ratio))을 유지한 채
+   7×4=28장이 항상 여백 안에 들어오도록 컨테이너 쿼리 단위(cqw/cqh)로 크기를 계산한다. */
+.board-right {
+  flex: 1; display: flex;
+  align-items: center; justify-content: center;
+  padding: var(--board-pad-y) var(--board-pad-x);
+  overflow: hidden;            /* 넘치거나 잘리는 대신 그리드 자체를 축소해 항상 안에 들어오게 함 */
+  container-type: size;        /* 자식이 cqw/cqh로 이 영역의 실제 크기를 참조할 수 있게 함 */
+}
+
+/* 상황판 7×4 카드 그리드 — 폭 기준/높이 기준 중 더 작은 쪽에 맞춰 전체 그리드를 축소(letterbox) */
 .board-card-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
-  flex: 1;
-  align-content: start;
+  grid-template-columns: repeat(var(--board-cols), 1fr);
+  grid-template-rows: repeat(var(--board-rows), 1fr);
+  gap: var(--board-card-gap);
+  aspect-ratio: var(--board-cols) / calc(var(--board-rows) * var(--board-card-ratio));
+  width: min(100cqw, 100cqh * (var(--board-cols) / (var(--board-rows) * var(--board-card-ratio))));
+  max-width: 100%;
+  max-height: 100%;
 }
 
-/* 상황판 카드 (클릭 없음, 표시 전용) */
+/* 상황판 카드 (클릭 없음, 표시 전용) — 비율은 항상 1 : var(--board-card-ratio) 고정.
+   align-self:start로 그리드 셀 높이가 살짝 남아도 늘어나지 않고 aspect-ratio가 그대로 적용된다. */
 .board-game-card {
-  aspect-ratio: 2/3;
+  aspect-ratio: 1 / var(--board-card-ratio);
+  width: 100%;
+  align-self: start;
   border-radius: 8px;
   position: relative;
   overflow: hidden;
 }
 
+/* 등급별 실제 색상은 CARD_CONFIG.colors 기반으로 JS가 inline style로 지정한다 (spec §1-2) */
 .board-card-back {
   width: 100%; height: 100%;
-  background: linear-gradient(135deg, #5c3cf5, #a78bfa);
   border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
   font-size: clamp(.85rem, 2.2vw, 1.4rem); font-weight: 900;
@@ -251,8 +303,8 @@ body {
   border: 2px solid rgba(255,255,255,.15);
   user-select: none;
 }
-/* .risk-back 는 위 game-card-back.risk-back 규칙에서 함께 처리 */
 
+/* 앞면 배경/글자색도 뒷면과 동일하게 CARD_CONFIG.colors 기반으로 JS가 inline style로 지정한다 (등급 색 통일) */
 .board-card-front {
   width: 100%; height: 100%;
   border-radius: 8px;
@@ -262,24 +314,19 @@ body {
   border: 2px solid rgba(255,255,255,.25);
   animation: cardFlipIn .35s ease;
 }
-.board-card-front.card-plus   { background: linear-gradient(160deg, #145c38, #27ae60); }
-.board-card-front.card-minus  { background: linear-gradient(160deg, #5c1a1a, #c0392b); }
-.board-card-front.card-zero   { background: linear-gradient(160deg, #2a2a4a, #4a4a7a); }
-.board-card-front.card-double { background: linear-gradient(160deg, #5c4400, #f39c12); }
-.board-card-front.card-risk   { background: linear-gradient(160deg, #7a0000, #e74c3c); border-color: rgba(255,100,80,.5); }
 
 .bc-score {
   font-size: clamp(1.4rem, 3vw, 2.6rem);
   font-weight: 900; line-height: 1; text-align: center;
   word-break: break-all;
+  color: inherit;
 }
 .bc-nick {
   font-size: clamp(1rem, 2vw, 1.6rem);
-  color: rgba(255,255,255,.85); text-align: center;
+  color: inherit; opacity: .85; text-align: center;
   margin-top: 4px; word-break: break-all;
   overflow: hidden; max-width: 100%; line-height: 1.2;
 }
-.board-card-front.card-double .bc-nick { color: rgba(0,0,0,.6); }
 
 /* =============================================
    클라이언트 뷰
@@ -539,22 +586,30 @@ body {
 .card-select-msg    { font-size: 1.1rem; font-weight: 700; }
 .card-select-status { font-size: .85rem; color: var(--c-red); min-height: 1.2em; margin-top: 2px; }
 
-/* 카드 그리드 + 구경 모드 오버레이를 감싸는 컨테이너 */
+/* 카드 그리드 + 구경 모드 오버레이를 감싸는 컨테이너
+   board-right와 동일한 컨테이너 쿼리 방식으로 카드 비율(1 : var(--board-card-ratio))을 고정하되,
+   여백은 board(--board-pad-*)의 2배(--cs-card-pad-*)를 준다. */
 .cs-card-grid-wrap {
   position: relative;
   flex: 1;
   min-height: 0;   /* flex 자식이 부모 높이를 넘지 않도록 */
+  display: flex;
+  align-items: center; justify-content: center;
+  padding: var(--cs-card-pad-y) var(--cs-card-pad-x);
+  overflow: hidden;
+  container-type: size;   /* 자식이 cqw/cqh로 이 영역의 실제 크기를 참조할 수 있게 함 */
 }
 
-/* 7 × 4 카드 그리드 — 행·열 모두 고정해 항상 가용 공간에 꼭 맞게 배열 */
+/* 7 × 4 카드 그리드 — board-card-grid와 동일하게 폭/높이 중 더 작은 쪽에 맞춰 통째로 축소 */
 .cs-card-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  grid-template-rows: repeat(4, 1fr);
-  gap: clamp(3px, 0.8vw, 6px);
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
+  grid-template-columns: repeat(var(--board-cols), 1fr);
+  grid-template-rows: repeat(var(--board-rows), 1fr);
+  gap: var(--board-card-gap);
+  aspect-ratio: var(--board-cols) / calc(var(--board-rows) * var(--board-card-ratio));
+  width: min(100cqw, 100cqh * (var(--board-cols) / (var(--board-rows) * var(--board-card-ratio))));
+  max-width: 100%;
+  max-height: 100%;
 }
 
 /* 오답자 구경 모드 — 카드 선택 불가 상태를 반투명 흰색 레이어로 표시 */
@@ -567,8 +622,12 @@ body {
   cursor: default;
 }
 
-/* 개별 카드 — aspect-ratio 제거, 그리드 셀이 크기를 결정 */
+/* 개별 카드 — board-game-card와 동일하게 비율 고정(1 : var(--board-card-ratio)).
+   align-self:start로 그리드 셀 높이가 살짝 남아도 늘어나지 않고 비율이 그대로 유지된다. */
 .game-card {
+  aspect-ratio: 1 / var(--board-card-ratio);
+  width: 100%;
+  align-self: start;
   border-radius: 8px;
   cursor: pointer;
   position: relative;
@@ -584,10 +643,9 @@ body {
 .game-card.flipped { cursor: default; }
 .game-card.watch   { cursor: default; }  /* 구경 모드 */
 
-/* 카드 뒷면 */
+/* 카드 뒷면 — 등급별 실제 색상은 CARD_CONFIG.colors 기반으로 JS가 inline style로 지정한다 (spec §1-2) */
 .game-card-back {
   width: 100%; height: 100%;
-  background: linear-gradient(135deg, #5c3cf5, #a78bfa);
   border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
   font-size: clamp(.7rem, 2vw, 1.4rem); font-weight: 900;
@@ -595,14 +653,8 @@ body {
   border: 2px solid rgba(255,255,255,.15);
   user-select: none;
 }
-/* 고위험 카드 뒷면 — 빨간색으로 구분 */
-.game-card-back.risk-back,
-.board-card-back.risk-back {
-  background: linear-gradient(135deg, #7a0000, #e74c3c);
-  border-color: rgba(255,120,100,.3);
-}
 
-/* 카드 앞면 */
+/* 카드 앞면 — 배경/글자색은 뒷면과 동일하게 CARD_CONFIG.colors 기반으로 JS가 inline style로 지정한다 (등급 색 통일) */
 .game-card-front {
   width: 100%; height: 100%;
   border-radius: 8px;
@@ -617,32 +669,26 @@ body {
   100% { transform: scaleX(1); opacity: 1; }
 }
 
-.game-card-front.card-plus   { background: linear-gradient(160deg, #145c38, #27ae60); }
-.game-card-front.card-minus  { background: linear-gradient(160deg, #5c1a1a, #c0392b); }
-.game-card-front.card-zero   { background: linear-gradient(160deg, #2a2a4a, #4a4a7a); }
-.game-card-front.card-double { background: linear-gradient(160deg, #5c4400, #f39c12); }
-/* 고위험 카드 — 선명한 빨강 (일반 card-minus보다 채도 높음) */
-.game-card-front.card-risk   { background: linear-gradient(160deg, #7a0000, #e74c3c); border-color: rgba(255,100,80,.5); }
-
 .gc-score {
   font-size: clamp(1.25rem, 3.5vw, 2.4rem);
   font-weight: 900; line-height: 1; text-align: center;
   word-break: keep-all;
+  color: inherit;
 }
 .gc-taker {
   font-size: clamp(.8rem, 2.1vw, 1.45rem);
-  color: rgba(255,255,255,.7); text-align: center;
+  color: inherit; opacity: .8; text-align: center;
   margin-top: 3px; word-break: break-all;
   overflow: hidden; max-width: 100%;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
-.game-card-front.card-double .gc-taker { color: rgba(0,0,0,.6); }
 
 /* 선택 카드 3초 확대 오버레이 */
 .cs-card-reveal {
   position: fixed; inset: 0; z-index: 500;
   background: rgba(0,0,0,.82);
   display: flex; align-items: center; justify-content: center;
+  cursor: pointer;   /* 클릭하면 3초를 기다리지 않고 바로 닫힘 */
 }
 .cs-card-reveal-inner {
   background: var(--c-card); border-radius: 20px;
@@ -662,6 +708,9 @@ body {
 .reveal-score.card-zero   { color: var(--c-sub); }
 .reveal-score.card-double { color: var(--c-gold); }
 .reveal-msg { font-size: 1rem; color: var(--c-sub); }
+
+/* 대폭발 발동 시 클라이언트 리빌 카드도 함께 흔들림 (점수는 표시하지 않음, spec §2-4) */
+.cs-card-reveal.explosion-active .cs-card-reveal-inner { animation: shake .5s ease 3; }
 
 /* =============================================
    순위 목록 (ceremony-overlay, cs-ceremony, admin)
@@ -702,6 +751,7 @@ body {
   grid-template-columns: repeat(7, 1fr);
   gap: 4px;
 }
+/* 배경/글자색은 CARD_CONFIG.colors 기반으로 JS가 inline style로 지정한다 (spec §1-2) */
 .acp-card {
   border-radius: 6px; padding: 6px 3px;
   text-align: center; cursor: default;
@@ -709,15 +759,10 @@ body {
   transition: opacity .3s;
 }
 .acp-card.acp-taken { opacity: .38; }
-.acp-card.card-plus   { background: linear-gradient(160deg, #145c38, #27ae60); }
-.acp-card.card-minus  { background: linear-gradient(160deg, #5c1a1a, #c0392b); }
-.acp-card.card-zero   { background: linear-gradient(160deg, #2a2a4a, #4a4a7a); }
-.acp-card.card-double { background: linear-gradient(160deg, #5c4400, #f39c12); }
-.acp-card.card-risk   { background: linear-gradient(160deg, #7a0000, #e74c3c); }
-.acp-num   { font-size: .58rem; color: rgba(255,255,255,.5); margin-bottom: 1px; }
-.acp-score { font-size: .9rem;  font-weight: 900; color: #fff; line-height: 1.1; }
+.acp-num   { font-size: .58rem; color: inherit; opacity: .65; margin-bottom: 1px; }
+.acp-score { font-size: .9rem;  font-weight: 900; color: inherit; line-height: 1.1; }
 .acp-taker {
-  font-size: .55rem; color: rgba(255,255,255,.85);
+  font-size: .55rem; color: inherit; opacity: .85;
   margin-top: 3px; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
 }

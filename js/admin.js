@@ -2,10 +2,12 @@
 // admin.js — 관리자 뷰 초기화 및 UI 업데이트
 // =============================================
 
+import { getCardBackColor, getCardTextColor } from './config.js';
+
 // 방향키 단축키 핸들러 (재진입 시 중복 등록 방지용으로 참조 보관)
 let _adminKeydownHandler = null;
 
-export function initAdminView({ roomCode, onStartCountdown, onNextQuestion, onSkipQuestion, onEndGame, onFlipAllCards }) {
+export function initAdminView({ roomCode, onStartCountdown, onNextQuestion, onSkipQuestion, onEndGame, onFlipAllCards, onArmUltraCard, onToggleExplosion }) {
   const roomBadge = document.getElementById('admin-room-badge');
   if (roomBadge) roomBadge.textContent = `방: ${roomCode}`;
 
@@ -16,6 +18,10 @@ export function initAdminView({ roomCode, onStartCountdown, onNextQuestion, onSk
     if (confirm('게임을 끝내시겠습니까?')) onEndGame();
   });
   document.getElementById('btn-flip-all-cards') ?.addEventListener('click', onFlipAllCards);
+  document.getElementById('btn-arm-ultra')      ?.addEventListener('click', onArmUltraCard);
+  document.getElementById('chk-explosion-enabled')?.addEventListener('change', (e) => {
+    onToggleExplosion(e.target.checked);
+  });
 
   // ── 방향키 단축키: ↑ = 5초 카운트다운, ↓ = 다음 문제 ──
   // 관리자 뷰가 화면에 떠 있을 때만 동작하도록 매번 확인
@@ -74,6 +80,22 @@ export function setCountdownEnabled(enabled) {
   btn.disabled = !enabled;
 }
 
+// 초고위험카드 예약 버튼 상태 갱신 (spec §2-1-1)
+// armed: 이번 문제에 예약됐는지, idle: 카운트다운 시작 전(IDLE)인지 — IDLE일 때만 조작 가능
+export function setUltraArmedState(armed, idle) {
+  const btn = document.getElementById('btn-arm-ultra');
+  if (!btn) return;
+  btn.disabled = !idle;
+  btn.classList.toggle('ultra-armed', armed);
+  btn.textContent = armed ? '☠️ 초고위험카드 예약됨 (다음 카운트다운에 반영)' : '☠️ 초고위험카드';
+}
+
+// '대폭발 포함' 토글 체크박스를 Firebase 상태와 동기화
+export function setExplosionToggle(enabled) {
+  const chk = document.getElementById('chk-explosion-enabled');
+  if (chk && chk.checked !== enabled) chk.checked = enabled;
+}
+
 // 관리자용 카드 구성 표시 (초기 렌더)
 export function renderAdminCards(deck) {
   const container = document.getElementById('admin-card-preview');
@@ -81,19 +103,18 @@ export function renderAdminCards(deck) {
   if (!container || !list) return;
 
   list.innerHTML = deck.map(card => {
-    const scoreStr = card.type === 'double' ? '×2'
-                   : card.score >  0        ? `+${card.score}`
-                   :                          `${card.score}`;
-    const bgCls   = card.type === 'double' ? 'card-double'
-                  : card.type === 'risk'   ? 'card-risk'
-                  : card.score >  0        ? 'card-plus'
-                  : card.score <  0        ? 'card-minus'
-                  :                          'card-zero';
+    const scoreStr = card.type === 'double'    ? '×2'
+                   : card.type === 'explosion' ? '💥'
+                   : card.score >  0           ? `+${card.score}`
+                   :                             `${card.score}`;
+    // 관리자 미리보기도 board/client 뒷면과 동일하게 등급별 색(CARD_CONFIG.colors)으로 표시
+    const bg      = getCardBackColor(card.type);
+    const fg      = getCardTextColor(card.type);
     const taker   = card.takenBy && card.takenBy !== '—' ? card.takenBy
                   : card.takenBy === '—'                  ? '—'
                   :                                         '';
     return `
-      <div class="acp-card ${bgCls}${card.takenBy ? ' acp-taken' : ''}" data-idx="${card.index}">
+      <div class="acp-card${card.takenBy ? ' acp-taken' : ''}" data-idx="${card.index}" style="background:${bg};color:${fg}">
         <div class="acp-num">${card.index + 1}</div>
         <div class="acp-score">${scoreStr}</div>
         ${taker ? `<div class="acp-taker">${taker}</div>` : ''}

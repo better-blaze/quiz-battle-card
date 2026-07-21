@@ -68,9 +68,9 @@ export const CARD_CONFIG = {
       { score: 1,  weight: 1 },
       { score: 2,  weight: 1 },
       { score: 3,  weight: 1 },
-      { score: 9,  weight: 1 },
-      { score: 10, weight: 1 },
+      { score: 10,  weight: 1 },
       { score: 11, weight: 1 },
+      { score: 12, weight: 1 },
     ],
     highRisk: [
       { score: -20,      weight: 1 },
@@ -80,7 +80,7 @@ export const CARD_CONFIG = {
       { score: 0,        weight: 1 },
       { score: 10,       weight: 1 },
       { score: 20,       weight: 1 },
-      { score: 'double', weight: 1, max: 1 },  // 세트당 최대 1장
+      { score: 'double', weight: 2, max: 1 },  // 세트당 최대 1장
     ],
     ultra: [
       { score: -40,        weight: 1 },
@@ -91,7 +91,7 @@ export const CARD_CONFIG = {
       { score: 25,         weight: 1 },
       { score: 30,         weight: 1 },
       { score: 40,         weight: 1 },
-      { score: 'explosion', weight: 1 },  // 대폭발: explosionEnabled가 false면 제외
+      { score: 'explosion', weight: 1.7 },  // 대폭발: explosionEnabled가 false면 제외
     ],
   },
 

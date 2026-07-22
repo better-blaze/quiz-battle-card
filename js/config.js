@@ -80,7 +80,7 @@ export const CARD_CONFIG = {
       { score: 15,        weight: 1 },
       { score: 10,       weight: 1 },
       { score: 20,       weight: 1 },
-      { score: 'double', weight: 2, max: 1 },  // 세트당 최대 1장
+      { score: 'double', weight: 3, max: 1 },  // 세트당 최대 1장
     ],
     ultra: [
       { score: -40,        weight: 1 },
@@ -91,7 +91,7 @@ export const CARD_CONFIG = {
       { score: 25,         weight: 1 },
       { score: 30,         weight: 1 },
       { score: 40,         weight: 1 },
-      { score: 'explosion', weight: 10 },  // 대폭발: explosionEnabled가 false면 제외
+      { score: 'explosion', weight: 20 },  // 대폭발: explosionEnabled가 false면 제외
     ],
   },
 

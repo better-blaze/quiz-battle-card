@@ -91,7 +91,7 @@ export const CARD_CONFIG = {
       { score: 25,         weight: 1 },
       { score: 30,         weight: 1 },
       { score: 40,         weight: 1 },
-      { score: 'explosion', weight: 2 },  // 대폭발: explosionEnabled가 false면 제외
+      { score: 'explosion', weight: 10 },  // 대폭발: explosionEnabled가 false면 제외
     ],
   },
 
